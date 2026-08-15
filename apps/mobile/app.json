@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "DeepSeek Harness",
+    "slug": "deepseek-harness",
+    "scheme": "dsh",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "ai.deepseek.harness" },
+    "android": { "package": "ai.deepseek.harness" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": true }
+  }
+}

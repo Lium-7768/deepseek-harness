@@ -39,6 +39,8 @@ peerDependencyRules:
 # (git hooks) genuinely need theirs.
 allowBuilds:
   esbuild: true
+  # Electron installer selects the matching bundled 7z executable for Windows package assembly.
+  electron-winstaller: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
   node-pty: true

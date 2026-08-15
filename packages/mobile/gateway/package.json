@@ -1,0 +1,29 @@
+{
+  "name": "@deepseek-ai/dsh-mobile-gateway",
+  "description": "Loopback-only mobile API adapter for one local DeepSeek Harness runtime.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.mjs",
+  "types": "lib/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.mts",
+      "default": "./lib/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch",
+    "test": "pnpm run bundle && node --test tests/*.mjs"
+  },
+  "files": [
+    "lib/**"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.3"
+  }
+}

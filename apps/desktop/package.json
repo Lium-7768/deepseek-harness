@@ -1,0 +1,44 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "version": "0.1.0",
+  "description": "Native desktop lifecycle and shell for DeepSeek Harness.",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "pnpm run build && electron-builder --mac --dir"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:^",
+    "@deepseek-ai/dsh-mobile-gateway": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "ai.deepseek.harness.desktop",
+    "productName": "DeepSeek Harness",
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../cli/lib",
+        "to": "dsh"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}
