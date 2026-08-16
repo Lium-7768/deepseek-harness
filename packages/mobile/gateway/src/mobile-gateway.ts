@@ -25,6 +25,11 @@ type PendingInteraction = {
   receivedAt: string
 }
 
+type DshHistory = {
+  events?: Array<{ event?: Record<string, unknown> }>
+}
+type MobileHistoryItem = { seq?: number; event: Record<string, unknown> }
+
 /** Provides a narrow HTTP API for paired native clients over one local DSH runtime. */
 export class MobileGateway {
   readonly #dsh: DshLoopbackClient
@@ -128,15 +133,16 @@ export class MobileGateway {
     }
     const history = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/history$/)
     if (history !== null) {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.history', { sessionId: decodePathSegment(history) })))
+      const value = await this.#dsh.call<DshHistory>('session.history', { sessionId: decodePathSegment(history) })
+      writeJson(response, 200, await this.#response({ ...value, items: toMobileHistoryItems(value) }))
       return
     }
     const events = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/events$/)
     if (events !== null) {
       const since = typeof body.since === 'number' && Number.isInteger(body.since) && body.since >= 0 ? body.since : 0
       const sessionId = decodePathSegment(events)
-      const history = await this.#dsh.call<{ items?: Array<{ seq?: number; event?: Record<string, unknown> }> }>('session.history', { sessionId })
-      const items = (history.items ?? []).filter(item => typeof item.seq !== 'number' || item.seq > since)
+      const history = await this.#dsh.call<DshHistory>('session.history', { sessionId })
+      const items = toMobileHistoryItems(history).filter(item => typeof item.seq !== 'number' || item.seq > since)
       const status = [...this.#pending.values()].some(item => item.sessionId === sessionId) ? 'waiting' : inferSessionStatus(items)
       writeJson(response, 200, await this.#response({ since, items, status }))
       return
@@ -243,6 +249,14 @@ function writeJson(response: ServerResponse, status: number, body: unknown): voi
 function writeError(response: ServerResponse, error: MobileGatewayError): void {
   const status = error.code === 'unauthorized' ? 401 : error.code === 'not-found' ? 404 : error.code === 'bad-request' ? 400 : 502
   writeJson(response, status, { error })
+}
+function toMobileHistoryItems(history: DshHistory): MobileHistoryItem[] {
+  return (history.events ?? []).flatMap((entry) => {
+    const event = entry.event
+    if (event === undefined) return []
+    const seq = typeof event.seq === 'number' && Number.isInteger(event.seq) ? event.seq : undefined
+    return [{ ...(seq === undefined ? {} : { seq }), event }]
+  })
 }
 
 function decodePathSegment(match: RegExpMatchArray): string {

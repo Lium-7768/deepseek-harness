@@ -117,3 +117,57 @@ test('paired devices receive and answer only current DSH interactions', async (t
   const revoked = await fetch(`${status.url}/v1/sessions/list`, { method: 'POST', headers, body: '{}' })
   assert.equal(revoked.status, 401)
 })
+
+test('paired devices receive normalized DSH history events', async (t) => {
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    assert.equal(request.url, '/api/session.history')
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({
+      type: 'server-response',
+      rpcId: message.rpcId,
+      result: {
+        ok: true,
+        value: { events: [{ event: { type: 'message/created', seq: 7, content: 'Fixture history event' } }] },
+      },
+    }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('History test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const history = await fetch(`${status.url}/v1/sessions/session-1/history`, { method: 'POST', headers, body: '{}' })
+  assert.equal(history.status, 200)
+  assert.deepEqual((await history.json()).data.items, [{
+    seq: 7,
+    event: { type: 'message/created', seq: 7, content: 'Fixture history event' },
+  }])
+  const events = await fetch(`${status.url}/v1/sessions/session-1/events`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ since: 6 }),
+  })
+  assert.equal(events.status, 200)
+  assert.deepEqual((await events.json()).data, {
+    since: 6,
+    items: [{ seq: 7, event: { type: 'message/created', seq: 7, content: 'Fixture history event' } }],
+    status: 'idle',
+  })
+})
