@@ -80,6 +80,8 @@ Gateway 拥有带版本的移动请求和事件 envelope。它映射到当前 DS
 
 设备配对、凭据轮换和撤销引入了现有 Web GUI 不拥有的状态。第一版必须将该状态保留在桌面应用本地，避免发明云端账号系统。
 
+## 桌面生命周期与设备控制
+桌面进程会把 `starting`、`running`、`stopped` 和 `error` 运行状态经由受限的预加载桥接发布，在子进程失败后显示可重试页面，并始终将 DSH 监听限制在 loopback。移动设备控制窗口创建一次性凭据、列出已配对设备并可立即撤销。持久化设备文件只以所有者权限保存 SHA-256 凭据哈希，绝不保存访问令牌。
 ## Related
 
 - [GUI layering and RPC protocol](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)

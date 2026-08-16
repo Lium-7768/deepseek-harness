@@ -1,4 +1,4 @@
-import type { MobileConnection, MobileGatewayFault, SessionHistoryPayload, SessionListPayload } from '@/types/mobile'
+import type { MobileConnection, MobileGatewayFault, PendingInteractionsPayload, SessionEventsPayload, SessionHistoryPayload, SessionListPayload } from '@/types/mobile'
 
 interface GatewayEnvelope<T> {
   contractVersion: 1
@@ -24,6 +24,21 @@ export class MobileApi {
   /** Loads the current durable session history. */
   sessionHistory(sessionId: string): Promise<SessionHistoryPayload> {
     return this.#post<SessionHistoryPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/history`, {})
+  }
+
+  /** Polls new session events and derives the current status. */
+  sessionEvents(sessionId: string, since: number): Promise<SessionEventsPayload> {
+    return this.#post<SessionEventsPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/events`, { since })
+  }
+
+  /** Reads only the current approval and question requests for one DSH session. */
+  pendingInteractions(sessionId: string): Promise<PendingInteractionsPayload> {
+    return this.#post<PendingInteractionsPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/interactions`, {})
+  }
+
+  /** Sends a correlated response to a pending DSH interaction. */
+  respondToInteraction(rpcId: string, result: unknown): Promise<unknown> {
+    return this.#post('/v1/interactions/respond', { rpcId, result })
   }
 
   /** Queues one text prompt in the selected DSH session. */

@@ -5,6 +5,7 @@ import type { MobileDevice, MobileDeviceCredential, MobileGatewayError, MobileRe
 
 export interface MobileGatewayOptions {
   dshUrl: string
+  devices?: MobileDeviceRegistry
   host?: string
   port?: number
 }
@@ -16,17 +17,28 @@ export interface MobileGatewayStatus {
 const LOOPBACK_HOST = '127.0.0.1'
 const MAX_BODY_BYTES = 256 * 1024
 
+type PendingInteraction = {
+  rpcId: string
+  type: 'approval/requested' | 'question/requested'
+  sessionId: string
+  payload: Record<string, unknown>
+  receivedAt: string
+}
+
 /** Provides a narrow HTTP API for paired native clients over one local DSH runtime. */
 export class MobileGateway {
   readonly #dsh: DshLoopbackClient
-  readonly #devices = new MobileDeviceRegistry()
+  readonly #devices: MobileDeviceRegistry
   readonly #host: string
   readonly #port: number
   #server: Server | undefined
   #status: MobileGatewayStatus | undefined
+  #muxAbort: AbortController | undefined
+  readonly #pending = new Map<string, PendingInteraction>()
 
   /** @param options - Loopback DSH and local listener configuration. */
   constructor(options: MobileGatewayOptions) {
+    this.#devices = options.devices ?? new MobileDeviceRegistry()
     this.#dsh = new DshLoopbackClient(options.dshUrl)
     this.#host = options.host ?? LOOPBACK_HOST
     this.#port = options.port ?? 0
@@ -55,6 +67,7 @@ export class MobileGateway {
     this.#server = server
     const status = { url: `http://${this.#host}:${address.port}` }
     this.#status = status
+    this.#startMux()
     return status
   }
 
@@ -63,6 +76,9 @@ export class MobileGateway {
     const server = this.#server
     this.#server = undefined
     this.#status = undefined
+    this.#muxAbort?.abort()
+    this.#muxAbort = undefined
+    this.#pending.clear()
     if (server === undefined) return
     await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
   }
@@ -98,13 +114,31 @@ export class MobileGateway {
     }
     const url = new URL(request.url ?? '/', 'http://mobile-gateway.local')
     const body = await readJson(request)
+    const pending = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/interactions$/)
+    if (pending !== null) {
+      this.#startMux()
+      const sessionId = decodePathSegment(pending)
+      const items = [...this.#pending.values()].filter(item => item.sessionId === sessionId)
+      writeJson(response, 200, await this.#response({ items }))
+      return
+    }
     if (url.pathname === '/v1/sessions/list') {
       writeJson(response, 200, await this.#response(await this.#dsh.call('session.list', {})))
       return
     }
     const history = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/history$/)
     if (history !== null) {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.history', { sessionId: decodeURIComponent(history[1]) })))
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session.history', { sessionId: decodePathSegment(history) })))
+      return
+    }
+    const events = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/events$/)
+    if (events !== null) {
+      const since = typeof body.since === 'number' && Number.isInteger(body.since) && body.since >= 0 ? body.since : 0
+      const sessionId = decodePathSegment(events)
+      const history = await this.#dsh.call<{ items?: Array<{ seq?: number; event?: Record<string, unknown> }> }>('session.history', { sessionId })
+      const items = (history.items ?? []).filter(item => typeof item.seq !== 'number' || item.seq > since)
+      const status = [...this.#pending.values()].some(item => item.sessionId === sessionId) ? 'waiting' : inferSessionStatus(items)
+      writeJson(response, 200, await this.#response({ since, items, status }))
       return
     }
     const prompt = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/messages$/)
@@ -112,7 +146,7 @@ export class MobileGateway {
       const text = typeof body.text === 'string' ? body.text.trim() : ''
       if (text.length === 0 || text.length > 100_000) throw new GatewayHttpError('bad-request', 'A message must contain between 1 and 100000 characters.')
       writeJson(response, 200, await this.#response(await this.#dsh.call('session.prompt', {
-        sessionId: decodeURIComponent(prompt[1]),
+        sessionId: decodePathSegment(prompt),
         mode: 'queue',
         content: [{ type: 'text', text }],
       })))
@@ -120,10 +154,53 @@ export class MobileGateway {
     }
     const cancellation = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/cancel$/)
     if (cancellation !== null) {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.cancel', { sessionId: decodeURIComponent(cancellation[1]) })))
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session.cancel', { sessionId: decodePathSegment(cancellation) })))
+      return
+    }
+    if (url.pathname === '/v1/interactions/respond') {
+      const rpcId = typeof body.rpcId === 'string' ? body.rpcId : ''
+      const interaction = this.#pending.get(rpcId)
+
+      if (interaction === undefined || !isExpectedInteractionResponse(interaction, body.result)) {
+        throw new GatewayHttpError('bad-request', 'The interaction response does not match a current approval or question request.')
+      }
+      const receipt = await this.#dsh.respond({ rpcId, result: body.result })
+      this.#pending.delete(rpcId)
+      writeJson(response, 200, await this.#response(receipt))
       return
     }
     writeError(response, { code: 'not-found', message: 'The requested mobile operation is not available.' })
+  }
+
+  #startMux(): void {
+    if (this.#muxAbort !== undefined || this.#status === undefined) return
+    const controller = new AbortController()
+    this.#muxAbort = controller
+    void this.#captureMux(controller)
+  }
+
+  async #captureMux(controller: AbortController): Promise<void> {
+    try {
+      for await (const envelope of this.#dsh.mux(controller.signal)) this.#rememberInteraction(envelope)
+    } catch (error) {
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH mux subscription ended:', error)
+    } finally {
+      if (this.#muxAbort === controller) this.#muxAbort = undefined
+    }
+  }
+
+  #rememberInteraction(envelope: { rpcId: string; payload: Record<string, unknown> }): void {
+    const { payload } = envelope
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
+    if (payload.type === 'approval/requested' && sessionId !== undefined && typeof payload.approvalId === 'string') {
+      this.#pending.set(envelope.rpcId, { rpcId: envelope.rpcId, type: 'approval/requested', sessionId, payload, receivedAt: new Date().toISOString() })
+    } else if (payload.type === 'question/requested' && sessionId !== undefined && Array.isArray(payload.questions)) {
+      this.#pending.set(envelope.rpcId, { rpcId: envelope.rpcId, type: 'question/requested', sessionId, payload, receivedAt: new Date().toISOString() })
+    } else if (payload.type === 'approval/resolved' && typeof payload.approvalId === 'string') {
+      for (const [rpcId, item] of this.#pending) if (item.payload.approvalId === payload.approvalId) this.#pending.delete(rpcId)
+    } else if (payload.type === 'question/resolved' && typeof payload.questionRpcId === 'string') {
+      this.#pending.delete(payload.questionRpcId)
+    }
   }
 
   async #response<T>(data: T): Promise<MobileResponse<T>> {
@@ -133,6 +210,7 @@ export class MobileGateway {
 
 class GatewayHttpError extends Error {
   readonly code: MobileGatewayError['code']
+
   constructor(code: MobileGatewayError['code'], message: string) {
     super(message)
     this.code = code
@@ -165,6 +243,38 @@ function writeJson(response: ServerResponse, status: number, body: unknown): voi
 function writeError(response: ServerResponse, error: MobileGatewayError): void {
   const status = error.code === 'unauthorized' ? 401 : error.code === 'not-found' ? 404 : error.code === 'bad-request' ? 400 : 502
   writeJson(response, status, { error })
+}
+
+function decodePathSegment(match: RegExpMatchArray): string {
+  const segment = match[1]
+  if (segment === undefined) throw new GatewayHttpError('bad-request', 'The session path is invalid.')
+  return decodeURIComponent(segment)
+}
+
+function isExpectedInteractionResponse(interaction: PendingInteraction, result: unknown): boolean {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) return false
+  const response = result as Record<string, unknown>
+  if (response.ok !== true || response.value === null || typeof response.value !== 'object' || Array.isArray(response.value)) return false
+  const value = response.value as Record<string, unknown>
+  if (interaction.type === 'approval/requested') {
+    return value.sessionId === interaction.sessionId && value.approvalId === interaction.payload.approvalId && (value.outcome === 'allowed-once' || value.outcome === 'rejected')
+  }
+  if (value.sessionId !== interaction.sessionId || value.answer === null || typeof value.answer !== 'object' || Array.isArray(value.answer)) return false
+  const answers = (value.answer as Record<string, unknown>).answers
+  if (!Array.isArray(answers) || answers.length !== (interaction.payload.questions as unknown[]).length) return false
+  const expectedIds = new Set((interaction.payload.questions as Array<{ id?: unknown }>).map(question => question.id).filter((id): id is string => typeof id === 'string'))
+  return expectedIds.size === answers.length && answers.every((answer) => {
+    if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) return false
+    const item = answer as Record<string, unknown>
+    return typeof item.id === 'string' && expectedIds.delete(item.id) && Array.isArray(item.selected) && item.selected.every(selected => typeof selected === 'string') && (item.custom === undefined || typeof item.custom === 'string')
+  })
+}
+
+function inferSessionStatus(items: Array<{ event?: Record<string, unknown> }>): 'running' | 'waiting' | 'idle' {
+  const last = items.at(-1)?.event
+  if (last?.type === 'approval/requested' || last?.type === 'question/requested') return 'waiting'
+  if (last?.type === 'host/session-status' && last.running === true) return 'running'
+  return 'idle'
 }
 
 function toGatewayError(error: unknown): MobileGatewayError {

@@ -78,6 +78,8 @@ Upstream changes to the Web GUI or API proxy can alter mobile semantics. The fea
 
 Device pairing, credential rotation, and revocation add state that the existing Web GUI does not own. The first implementation must keep this state local to the desktop application and avoid inventing a cloud account system.
 
+## Desktop lifecycle and device control
+The desktop process publishes `starting`, `running`, `stopped`, and `error` runtime states to its restricted preload bridge, renders a retry page after a child failure, and keeps the DSH listener on loopback. Its mobile control window creates one-time credentials, lists paired devices, and revokes them immediately. The durable paired-device file stores only SHA-256 credential hashes with owner-only permissions; it never stores access tokens.
 ## Related
 
 - [GUI layering and RPC protocol](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)
