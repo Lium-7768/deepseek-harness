@@ -282,6 +282,8 @@ test('paired devices delegate session lifecycle and history paging to DSH', asyn
       '/api/session.rename': { title: 'Renamed session', seq: 12 },
       '/api/session.fork': { sessionId: 'forked-session' },
       '/api/workspace.archiveSession': { archivedSessionIds: ['session-1'] },
+      '/api/workspace.rename': { workspace: { workspaceId: 'workspace-1', title: 'Renamed workspace' } },
+      '/api/workspace.delete': { deleted: true },
       '/api/session.history': {
         events: [{ event: { type: 'assistant/message', seq: 4, content: 'Older response' } }],
         hasMore: true,
@@ -318,6 +320,10 @@ test('paired devices delegate session lifecycle and history paging to DSH', asyn
   })
   assert.deepEqual((await post('/v1/sessions/session-1/fork', { atSeq: 9 })).data, { sessionId: 'forked-session' })
   assert.deepEqual((await post('/v1/sessions/session-1/archive', {})).data, { archivedSessionIds: ['session-1'] })
+  assert.deepEqual((await post('/v1/workspaces/workspace-1/rename', { title: 'Renamed workspace' })).data, {
+    workspace: { workspaceId: 'workspace-1', title: 'Renamed workspace' },
+  })
+  assert.deepEqual((await post('/v1/workspaces/workspace-1/delete', {})).data, { deleted: true })
   assert.deepEqual((await post('/v1/sessions/session-1/history', { beforeSeq: 5, maxMessages: 20 })).data.items, [
     { seq: 4, event: { type: 'assistant/message', seq: 4, content: 'Older response' } },
   ])
@@ -326,6 +332,8 @@ test('paired devices delegate session lifecycle and history paging to DSH', asyn
     { url: '/api/session.rename', payload: { sessionId: 'session-1', title: 'Renamed session' } },
     { url: '/api/session.fork', payload: { sessionId: 'session-1', atSeq: 9 } },
     { url: '/api/workspace.archiveSession', payload: { sessionId: 'session-1' } },
+    { url: '/api/workspace.rename', payload: { workspaceId: 'workspace-1', title: 'Renamed workspace' } },
+    { url: '/api/workspace.delete', payload: { workspaceId: 'workspace-1' } },
     { url: '/api/session.history', payload: { sessionId: 'session-1', beforeSeq: 5, maxMessages: 20 } },
   ])
 })

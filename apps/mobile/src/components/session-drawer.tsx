@@ -42,6 +42,7 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   const [groupBy, setGroupBy] = useState<'workspace' | 'flat'>('workspace')
   const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set())
   const [expandedSessionId, setExpandedSessionId] = useState<string | undefined>()
+  const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<string | undefined>()
   const connection = useConnectionStore(value => value.connection)
   const selectSession = useSessionSelectionStore(value => value.selectSession)
   const queryClient = useQueryClient()
@@ -99,7 +100,11 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
       return next
     })
   const refreshSessions = async (): Promise<void> => {
-    await queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] }),
+      queryClient.invalidateQueries({ queryKey: ['workspace-sessions', connection?.gatewayUrl, connection?.deviceId] }),
+      queryClient.invalidateQueries({ queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId] }),
+    ])
   }
   const createSession = async (): Promise<void> => {
     try {
@@ -129,6 +134,21 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
     } catch (error) {
       Alert.alert('归档会话失败', error instanceof Error ? error.message : '请稍后重试。')
     }
+  }
+  const deleteWorkspace = async (workspaceId: string): Promise<void> => {
+    try {
+      await new MobileApi(requireConnection(connection)).deleteWorkspace(workspaceId)
+      await refreshSessions()
+      setExpandedWorkspaceId(undefined)
+    } catch (error) {
+      Alert.alert('移除工作区失败', error instanceof Error ? error.message : '请稍后重试。')
+    }
+  }
+  const confirmDeleteWorkspace = (workspaceId: string, title: string): void => {
+    Alert.alert('移除工作区', `“${title}”将不再显示为分组；桌面文件夹和所有会话记录不会被删除。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '移除', style: 'destructive', onPress: () => void deleteWorkspace(workspaceId) },
+    ])
   }
   const confirmArchive = (session: SessionSummary): void => {
     const title = typeof session.title === 'string' && session.title.trim() ? session.title : '新会话'
@@ -328,13 +348,44 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
               ) : (
                 visibleRows.map(item =>
                   item.kind === 'workspace' ? (
-                    <WorkspaceItem
-                      key={item.key}
-                      workspaceKey={item.key}
-                      label={item.label}
-                      collapsed={collapsedWorkspaceKeys.has(item.key)}
-                      onPress={() => toggleWorkspace(item.key)}
-                    />
+                    <View key={item.key}>
+                      <WorkspaceItem
+                        workspaceKey={item.key}
+                        label={item.label}
+                        collapsed={collapsedWorkspaceKeys.has(item.key)}
+                        onPress={() => toggleWorkspace(item.key)}
+                        onLongPress={
+                          item.workspace === undefined
+                            ? undefined
+                            : () =>
+                              setExpandedWorkspaceId(current =>
+                                current === item.workspace?.workspaceId ? undefined : item.workspace?.workspaceId,
+                              )
+                        }
+                      />
+                      {item.workspace !== undefined && expandedWorkspaceId === item.workspace.workspaceId ? (
+                        <View accessible accessibilityLabel="工作区操作" style={styles.sessionActions}>
+                          <NativeListRow
+                            title="重命名工作区"
+                            accessibilityRole="button"
+                            onPress={() =>
+                              router.push({
+                                pathname: '/workspace/[workspaceId]/rename',
+                                params: { workspaceId: item.workspace?.workspaceId ?? '', title: item.workspace?.title ?? item.label },
+                              })
+                            }
+                            right={<NativeIcon name="edit" size={18} color={mobileTheme.colors.inkMuted} />}
+                          />
+                          <NativeListRow
+                            title="移除工作区"
+                            description="保留桌面文件夹和会话记录"
+                            accessibilityRole="button"
+                            onPress={() => confirmDeleteWorkspace(item.workspace?.workspaceId ?? '', item.workspace?.title ?? item.label)}
+                            right={<NativeIcon name="folder-close" size={18} color={mobileTheme.colors.danger} />}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
                   ) : (
                     <View key={item.key}>
                       <SessionItem
@@ -412,11 +463,13 @@ function WorkspaceItem({
   label,
   collapsed,
   onPress,
+  onLongPress,
 }: {
   workspaceKey: string
   label: string
   collapsed: boolean
   onPress: () => void
+  onLongPress?: () => void
 }): React.JSX.Element {
   const ungrouped = workspaceKey === 'workspace:ungrouped'
   return (
@@ -425,6 +478,8 @@ function WorkspaceItem({
       accessibilityLabel={`${collapsed ? '展开' : '收起'}${label}`}
       accessibilityState={{ expanded: !collapsed }}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       style={({ pressed }) => [styles.folder, pressed && styles.pressed]}
     >
       <NativeIcon name={collapsed ? 'chevron-right' : 'expand-more'} size={18} color={mobileTheme.colors.inkMuted} />

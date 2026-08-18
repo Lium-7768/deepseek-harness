@@ -141,6 +141,16 @@ export class MobileApi {
     )
   }
 
+  /** Renames one desktop-owned workspace without changing its directory path. */
+  renameWorkspace(workspaceId: string, title: string): Promise<{ workspace: unknown }> {
+    return this.#post(`/v1/workspaces/${encodeURIComponent(workspaceId)}/rename`, { title })
+  }
+
+  /** Removes one desktop workspace registration while preserving its directory and session logs. */
+  deleteWorkspace(workspaceId: string): Promise<{ deleted: true }> {
+    return this.#post(`/v1/workspaces/${encodeURIComponent(workspaceId)}/delete`, {})
+  }
+
   /** Reads the desktop mux-derived pending inbox snapshot for one session. */
   sessionQueue(sessionId: string): Promise<MobileQueuePayload> {
     return this.#post<MobileQueuePayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/queue`, {})

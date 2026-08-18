@@ -246,6 +246,27 @@ export class MobileGateway {
       writeJson(response, 200, await this.#response({ items: this.#queues.get(sessionId) ?? [] }))
       return
     }
+    const renameWorkspace = url.pathname.match(/^\/v1\/workspaces\/([^/]+)\/rename$/)
+    if (renameWorkspace !== null) {
+      const title = requireText(body.title, '工作区名称不能为空。')
+      writeJson(
+        response,
+        200,
+        await this.#response(
+          await this.#dsh.call('workspace.rename', { workspaceId: decodePathSegment(renameWorkspace), title }),
+        ),
+      )
+      return
+    }
+    const deleteWorkspace = url.pathname.match(/^\/v1\/workspaces\/([^/]+)\/delete$/)
+    if (deleteWorkspace !== null) {
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('workspace.delete', { workspaceId: decodePathSegment(deleteWorkspace) })),
+      )
+      return
+    }
     const history = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/history$/)
     if (history !== null) {
       const beforeSeq = optionalNonnegativeInteger(body.beforeSeq, '历史游标必须是非负整数。')

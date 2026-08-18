@@ -5,7 +5,7 @@ export type SessionOrder = 'manual' | 'updated'
 
 /** A row rendered by the drawer's workspace and session tree. */
 export type SessionDrawerRow =
-  | { kind: 'workspace'; key: string; label: string }
+  | { kind: 'workspace'; key: string; label: string; workspace?: MobileWorkspace }
   | { kind: 'session'; key: string; session: SessionSummary }
 
 /** Resolves the active session from a root or nested Expo Router route. */
@@ -94,7 +94,7 @@ export function sessionRows(
       const session = byId.get(sessionId)
       if (session !== undefined) sessions.push(session)
     }
-    rows.push({ kind: 'workspace', key: `workspace:${workspace.workspaceId}`, label: workspaceLabel(workspace) })
+    rows.push({ kind: 'workspace', key: `workspace:${workspace.workspaceId}`, label: workspaceLabel(workspace), workspace })
     rows.push(...sessions.map(session => ({ kind: 'session' as const, key: `session:${session.sessionId}`, session })))
   }
 
