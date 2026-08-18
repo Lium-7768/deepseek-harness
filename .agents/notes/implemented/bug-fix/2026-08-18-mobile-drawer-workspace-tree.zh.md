@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[English](2026-08-18-mobile-drawer-workspace-tree.md) | 中文
+
 ## Problem
 
 原生抽屉只接收 `session.list`，因此无法复现桌面端的工作区成员关系和明确的未分组节点。品牌与控制项还直接放在抽屉滚动容器中，未为 iPhone 顶部安全区域留出空间。

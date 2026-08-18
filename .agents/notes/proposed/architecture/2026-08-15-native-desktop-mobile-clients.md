@@ -2,6 +2,8 @@
 
 Status: proposed
 
+English | [中文](2026-08-15-native-desktop-mobile-clients.zh.md)
+
 ## Problem
 
 The Web GUI is the only product client for a local DSH runtime. It is the authoritative presentation of sessions, messages, tool calls, questions, approvals, workflows, settings, and workspace state, but it does not supply a native desktop lifecycle or a native mobile experience. A direct internet exposure of the Web GUI is inappropriate for a native mobile client: its browser trust fence protects browser callers and is deliberately not an authentication or device-authorization protocol.

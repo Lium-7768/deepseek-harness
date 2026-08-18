@@ -1,4 +1,4 @@
-# Agent Note：Expo SDK 57 原生工具链兼容性
+# Agent Note: Expo SDK 57 原生工具链兼容性
 
 Status: implemented
 
@@ -6,16 +6,24 @@ Status: implemented
 
 ## 问题
 
-移动端使用 Expo SDK 57 与 React Native 0.86.2，但 `react-native-reanimated` 的 patch 版本超出 SDK 支持范围。全新执行 Expo prebuild 和 CocoaPods 安装后，应用 target 尚未编译就失败，因为 Xcode 26.0.1 不接受 `expo-modules-jsi` 57.0.4 中的 `weak let` 声明。
+Expo SDK 57 使用 React Native 0.86.2，并要求采用 SDK 支持的 `react-native-reanimated` patch 版本。Xcode 26.0.1 会在应用 target 编译前拒绝 `expo-modules-jsi` 57.0.4 中的 `weak let` 声明。
 
 ## 决策
 
-使用 Expo resolver 将 `react-native-reanimated` 对齐到 SDK 57 支持的 4.5.1，并根据结果依赖图重新生成 iOS 工程和 Pods。不修改 `node_modules`、Pods 或产品 Swift 设置。Expo 的 SDK 57 支持表要求 Xcode 26.4 或更新版本；剩余原生构建失败是环境前置条件不足，不是过期生成工程造成的。
+移动工作区使用 Expo SDK 57 支持的 `react-native-reanimated` 4.5.1。`patches/expo-modules-jsi@57.0.4.patch` 通过 pnpm 的 `patchedDependencies` 机制修改不兼容的 Swift 声明。iOS 工程和 Pods 从依赖图生成；不将 `node_modules`、Pods 或产品 Swift 设置作为本地修复点。
+
+## 考虑过的替代方案
+
+**要求使用更新版本的 Xcode** 被拒绝，因为受控的包补丁能让 Xcode 26.0.1 编译支持的依赖图，并保留现有开发环境的可用性。
+
+**直接修改 CocoaPods 输出或 `node_modules`** 被拒绝，因为重新生成会移除这些修改，无法提供可复现的原生构建。
+
+**保留不受支持的 Reanimated patch** 被拒绝，因为 Expo resolver 负责选择与 SDK 兼容的依赖版本。
 
 ## 后果
 
-JavaScript 依赖清单和 workspace lockfile 记录了 Expo 支持的 Reanimated patch。生成的 iOS 工程仍是可丢弃的构建产物，依赖变更后必须重新生成。构建此应用前需要选择 Xcode 26.4 或更新版本，然后重新运行标准 Expo Debug 命令。
+工作区 lockfile 记录 Expo 支持的 Reanimated patch，pnpm 补丁记录 Swift 源码修改。生成的 iOS 文件始终可以由工作区依赖图重新生成。Xcode 26.0.1 使用经过补丁处理的依赖构建 Debug target。
 
 ## 验证
 
-`expo install --fix --pnpm` 将 Reanimated 从 4.5.3 改为 4.5.1 后，`expo install --check` 通过。全新执行 `expo prebuild --platform ios --no-install`、CocoaPods 安装以及 `expo run:ios --configuration Debug --device DC45FFE1-D3E5-4335-8BAD-EBD81A264035 --no-bundler` 时，在 Xcode 26.0.1 / Swift 6.2 下稳定复现 15 个 `weak let` 错误。Expo SDK 57 支持表列出 Xcode 26.4+；构建失败，因此不声称有源码补丁或截图验证。
+`expo install --check` 接受 Expo 依赖图。Pods 安装经过补丁处理的 `expo-modules-jsi` 依赖后，`xcodebuild` 可以为 iPhone 17 Pro 模拟器完成 Debug 构建。

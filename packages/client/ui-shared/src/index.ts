@@ -1,3 +1,4 @@
+/** Shared semantic presentation tokens for desktop and native clients. */
 export const sharedUiTokens = {
   colors: {
     background: '#f5f7fb',
@@ -33,9 +34,13 @@ export const sharedUiTokens = {
     },
   },
 } as const
+/** User-facing category assigned to a projected session event. */
 export type SharedMessageKind = 'user' | 'assistant' | 'tool' | 'system' | 'agent'
+/** Compact execution state displayed for a projected tool event. */
 export type ToolState = 'running' | 'completed' | 'failed'
+/** A prose or fenced-code segment extracted from visible message text. */
 export type MessageSegment = { kind: 'text' | 'code'; text: string; language?: string }
+/** Client-neutral display record derived from one user-visible session event. */
 export type SharedMessagePresentation = {
   kind: SharedMessageKind
   label: string
@@ -48,6 +53,7 @@ export type SharedMessagePresentation = {
   toolOutput?: string
   sourceSeq?: number
 }
+/** Durable event together with its optional source sequence. */
 export type SharedEventItem = { seq?: number; event: Record<string, unknown> }
 const PROTOCOL_TYPES = [
   'turn/',
@@ -139,6 +145,11 @@ const isInternalPrompt = (text: string) =>
     'teamo_mobile_ok',
     'teamo_dsh_ok',
   ].some(marker => text.toLowerCase().includes(marker))
+/**
+ * Decides whether an event is safe to expose in a conversation view.
+ * @param event Durable event record to classify.
+ * @returns Whether the record represents visible user, assistant, or tool content.
+ */
 export function isUserVisibleEvent(event: Record<string, unknown>): boolean {
   if (isProtocolEvent(event)) return false
   const kind = explicitRole(event) ?? typeRole(event)
@@ -146,6 +157,11 @@ export function isUserVisibleEvent(event: Record<string, unknown>): boolean {
   const text = eventContent(event) ?? ''
   return kind === 'tool' || (Boolean(text) && !isInternalPrompt(text))
 }
+/**
+ * Extracts the best available textual payload from an event record.
+ * @param event Durable event record to inspect.
+ * @returns Trimmed visible text, or an empty string when no text exists.
+ */
 export function formatEventText(event: Record<string, unknown>): string {
   return eventContent(event) ?? ''
 }
@@ -177,6 +193,12 @@ function fieldText(value: unknown): string | undefined {
   }
   return undefined
 }
+/**
+ * Converts one event record into a client-neutral message presentation.
+ * @param event Durable event record to project.
+ * @param _index Reserved source position for compatible callers.
+ * @returns The projected display record.
+ */
 export function classifyEvent(event: Record<string, unknown>, _index = 0): SharedMessagePresentation {
   const type = normalizedType(event)
   const kind = explicitRole(event) ?? typeRole(event) ?? 'system'
@@ -211,6 +233,11 @@ export function classifyEvent(event: Record<string, unknown>, _index = 0): Share
     ...(typeof event.callId === 'string' ? { callId: event.callId } : {}),
   }
 }
+/**
+ * Projects ordered durable events into visible conversation records.
+ * @param items Event records and optional source sequences.
+ * @returns User-visible messages with consecutive assistant streaming chunks joined.
+ */
 export function projectVisibleMessages(items: SharedEventItem[]): SharedMessagePresentation[] {
   const projected: SharedMessagePresentation[] = []
   for (const item of [...items].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))) {
@@ -231,6 +258,11 @@ export function projectVisibleMessages(items: SharedEventItem[]): SharedMessageP
   }
   return projected
 }
+/**
+ * Splits visible text into prose and fenced-code display segments.
+ * @param text Settled or streaming message text.
+ * @returns Ordered segments suitable for a client renderer.
+ */
 export function splitMessageSegments(text: string): MessageSegment[] {
   const result: MessageSegment[] = []
   text.split('```').forEach((part, index) => {
@@ -244,6 +276,11 @@ export function splitMessageSegments(text: string): MessageSegment[] {
   })
   return result
 }
+/**
+ * Maps an event type to the compact tool state displayed by clients.
+ * @param type Normalized or raw event type.
+ * @returns Running, completed, or failed execution state.
+ */
 export function getToolState(type: string): ToolState {
   if (type.includes('error') || type.includes('fail')) return 'failed'
   if (type.includes('complete') || type.includes('success') || type.includes('done') || type === 'tool/result')

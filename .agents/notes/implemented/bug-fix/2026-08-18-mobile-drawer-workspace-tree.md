@@ -2,7 +2,10 @@
 
 Status: implemented
 
+English | [中文](2026-08-18-mobile-drawer-workspace-tree.zh.md)
+
 ## Problem
+
 
 The native drawer received only `session.list`, so it could not reproduce the desktop workspace membership and its explicit Ungrouped bucket. It also placed its brand and controls directly in the drawer scroll view, which did not reserve the iPhone top safe area.
 

@@ -28,7 +28,7 @@ injectWorkspacePackages: true
 overrides:
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
-  '@babel/generator': 7.29.8
+  'rolldown-plugin-dts>@babel/generator': 8.0.0-rc.6
 
 packageExtensions:
   react-native-worklets@0.10.1:

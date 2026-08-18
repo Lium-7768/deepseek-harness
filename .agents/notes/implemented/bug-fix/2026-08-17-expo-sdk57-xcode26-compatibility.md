@@ -6,16 +6,24 @@ English | [中文](2026-08-17-expo-sdk57-xcode26-compatibility.zh.md)
 
 ## Problem
 
-The mobile app used Expo SDK 57 with React Native 0.86.2 and an out-of-range `react-native-reanimated` patch. A clean Expo prebuild and CocoaPods install still failed before the application target compiled because Xcode 26.0.1 rejects the `weak let` declarations shipped by `expo-modules-jsi` 57.0.4.
+Expo SDK 57 uses React Native 0.86.2 and requires the SDK-supported `react-native-reanimated` patch. Xcode 26.0.1 rejects the `weak let` declarations in `expo-modules-jsi` 57.0.4 before the application target compiles.
 
 ## Decision
 
-Use Expo's resolver to align `react-native-reanimated` with the SDK 57 supported version, 4.5.1, and regenerate the iOS project and Pods from the resulting dependency graph. Do not patch `node_modules`, Pods, or product Swift settings. Expo's SDK 57 support table requires Xcode 26.4 or newer; the remaining native build failure is therefore an environment prerequisite, not a stale generated project.
+The mobile workspace uses `react-native-reanimated` 4.5.1, the Expo SDK 57-supported version. `patches/expo-modules-jsi@57.0.4.patch` changes the incompatible Swift declarations through pnpm's `patchedDependencies` mechanism. The iOS project and Pods are generated from the dependency graph; `node_modules`, Pods, and product Swift settings are not edited as local fixes.
+
+## Alternatives considered
+
+**Requiring a newer Xcode release** was rejected because the controlled package patch makes Xcode 26.0.1 compile the supported dependency graph and keeps the existing development environment usable.
+
+**Editing CocoaPods output or `node_modules` directly** was rejected because regeneration removes those edits and cannot provide a reproducible native build.
+
+**Keeping an unsupported Reanimated patch** was rejected because Expo's resolver owns the SDK-compatible dependency selection.
 
 ## Consequences
 
-The JavaScript dependency manifest and workspace lockfile record the Expo-supported Reanimated patch. The generated iOS project remains disposable and must be regenerated after dependency changes. Building this app requires selecting Xcode 26.4 or newer before rerunning the standard Expo Debug command.
+The workspace lockfile records the Expo-supported Reanimated patch and the pnpm patch records the Swift source modification. Generated iOS files remain reproducible from the workspace dependency graph. Xcode 26.0.1 builds the Debug target with the patched dependency.
 
 ## Verification
 
-`expo install --check` passes after `expo install --fix --pnpm` changes Reanimated from 4.5.3 to 4.5.1. A fresh `expo prebuild --platform ios --no-install`, CocoaPods installation, and `expo run:ios --configuration Debug --device DC45FFE1-D3E5-4335-8BAD-EBD81A264035 --no-bundler` reproduce the 15 `weak let` errors under Xcode 26.0.1 / Swift 6.2. Expo's SDK 57 support table lists Xcode 26.4+; no source patch or screenshot is claimed from the failed build.
+`expo install --check` accepts the Expo dependency graph. `xcodebuild` completes the Debug build for the iPhone 17 Pro simulator after Pods install the patched `expo-modules-jsi` dependency.

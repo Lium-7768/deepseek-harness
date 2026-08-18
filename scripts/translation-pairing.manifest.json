@@ -1,6 +1,7 @@
 {
   "excluded": [
     ".agents/notes/AGENTS.md",
+    "apps/mobile/ios/Pods/",
     ".agents/notes/implemented/AGENTS.md",
     ".agents/notes/implemented/CLAUDE.md",
     "docs/AGENTS.md",

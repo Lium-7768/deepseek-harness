@@ -1,5 +1,7 @@
 # Mobile Gateway Runtime Payload
 
+English | [中文](README.zh.md)
+
 This directory retains the self-contained ECMAScript module that was used during the **2026-08-18** local desktop-app validation to replace the mobile gateway payload inside an already-built DeepSeek Harness application bundle. It is retained as an auditable maintenance artifact; it is **not** an application entry point, a development server, or the source of truth for the mobile gateway.
 
 ## What the payload contains
