@@ -1,8 +1,13 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, MenuItem, nativeImage, Tray } from 'electron'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MobileDeviceRegistry, MobileGateway, type MobileGatewayStatus } from '@deepseek-ai/dsh-mobile-gateway'
-import { DshRuntime, type DshRuntimeLifecycleStatus, type DshRuntimeOptions, type DshRuntimeStatus } from './dsh-runtime.ts'
+import {
+  DshRuntime,
+  type DshRuntimeLifecycleStatus,
+  type DshRuntimeOptions,
+  type DshRuntimeStatus,
+} from './dsh-runtime.ts'
 import { loadDeviceSnapshots, saveDeviceSnapshots } from './mobile-device-store.ts'
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url))
@@ -12,6 +17,7 @@ let tray: Tray | undefined
 let runtime: DshRuntime | undefined
 let mobileGateway: MobileGateway | undefined
 let mobileGatewayStatus: MobileGatewayStatus | undefined
+const DEFAULT_MOBILE_GATEWAY_PORT = 61_297
 let deviceRegistry: MobileDeviceRegistry | undefined
 let quitting = false
 
@@ -19,10 +25,13 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => focusMainWindow())
-  void app.whenReady().then(startDesktop).catch((error) => {
-    console.error('The desktop application could not start.', error)
-    showRuntimeFailure(error)
-  })
+  void app
+    .whenReady()
+    .then(startDesktop)
+    .catch((error) => {
+      console.error('The desktop application could not start.', error)
+      showRuntimeFailure(error)
+    })
 }
 
 app.on('window-all-closed', () => {
@@ -39,6 +48,7 @@ app.on('before-quit', (event) => {
 async function startDesktop(): Promise<void> {
   registerIpcHandlers()
   createTray()
+  installApplicationMenu()
   deviceRegistry = new MobileDeviceRegistry(await loadDeviceSnapshots(deviceStorePath()))
   runtime = new DshRuntime(resolveDesktopRuntimeOptions())
   runtime.onStatus((status) => {
@@ -48,7 +58,7 @@ async function startDesktop(): Promise<void> {
   })
   createMainWindow()
   const running = await runtime.start()
-  mobileGateway = new MobileGateway({ dshUrl: running.url, devices: deviceRegistry })
+  mobileGateway = new MobileGateway({ dshUrl: running.url, devices: deviceRegistry, port: mobileGatewayPort() })
   mobileGatewayStatus = await mobileGateway.start()
   loadRuntimePage(running)
 }
@@ -113,6 +123,15 @@ function loadRuntimePage(status: DshRuntimeStatus): void {
   void target.loadURL(status.url).catch(error => showRuntimeFailure(error))
 }
 
+function installApplicationMenu(): void {
+  const menu = Menu.getApplicationMenu() ?? Menu.buildFromTemplate([])
+  menu.insert(
+    1,
+    new MenuItem({ label: 'Mobile', submenu: [{ label: 'Mobile devices…', click: () => showControlWindow() }] }),
+  )
+  Menu.setApplicationMenu(menu)
+}
+
 function showRuntimeFailure(error: unknown): void {
   if (quitting) return
   if (mainWindow === undefined || mainWindow.isDestroyed()) createMainWindow()
@@ -162,7 +181,12 @@ function showControlWindow(): void {
     width: 620,
     height: 720,
     title: 'Mobile devices',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: join(moduleDirectory, '../preload/index.cjs') },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: join(moduleDirectory, '../preload/index.cjs'),
+    },
   })
   controlWindow = window
   window.on('closed', () => {
@@ -202,17 +226,28 @@ function deviceStorePath(): string {
   return join(app.getPath('userData'), 'mobile-devices.json')
 }
 
+function mobileGatewayPort(): number {
+  const configured = Number(process.env.DSH_MOBILE_GATEWAY_PORT)
+  return Number.isInteger(configured) && configured >= 1 && configured <= 65_535
+    ? configured
+    : DEFAULT_MOBILE_GATEWAY_PORT
+}
+
 function mobileGatewayPublicUrl(): string {
   return process.env.DSH_MOBILE_GATEWAY_PUBLIC_URL ?? requireMobileGatewayStatus().url
 }
 
 function resolveDesktopRuntimeOptions(): DshRuntimeOptions {
   const cwd = resolveDesktopWorkingDirectory()
-  if (app.isPackaged) return {
-    command: process.execPath,
-    commandArgs: ['--expose-internals', join(process.resourcesPath, 'dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')],
-    environment: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  }
+  if (app.isPackaged)
+    return {
+      command: process.execPath,
+      commandArgs: [
+        '--expose-internals',
+        join(process.resourcesPath, 'dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+      ],
+      environment: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    }
   if (cwd === undefined || process.env.DSH_DESKTOP_COMMAND !== undefined) return cwd === undefined ? {} : { cwd }
   return {
     command: process.execPath,

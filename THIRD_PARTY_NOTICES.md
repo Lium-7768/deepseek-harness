@@ -59,6 +59,9 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
 | [`expo`](https://github.com/expo/expo) | MIT |
+| [`expo-clipboard`](https://github.com/expo/expo) | MIT |
+| [`expo-constants`](https://github.com/expo/expo) | MIT |
+| [`expo-linking`](https://github.com/expo/expo) | MIT |
 | [`expo-router`](https://github.com/expo/expo) | MIT |
 | [`expo-secure-store`](https://github.com/expo/expo) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
@@ -84,8 +87,12 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
 | [`react-native`](https://github.com/react/react-native) | MIT |
+| [`react-native-gesture-handler`](https://github.com/software-mansion/react-native-gesture-handler) | MIT |
+| [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | MIT |
 | [`react-native-safe-area-context`](https://github.com/AppAndFlow/react-native-safe-area-context) | MIT |
 | [`react-native-screens`](https://github.com/software-mansion/react-native-screens) | MIT |
+| [`react-native-svg`](https://github.com/react-native-community/react-native-svg) | MIT |
+| [`react-native-worklets`](https://github.com/software-mansion/react-native-reanimated) | MIT |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
 | [`supports-color`](https://github.com/chalk/supports-color) | MIT |
@@ -100,6 +107,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
+- `expo-modules-jsi@57.0.4` — [`patches/expo-modules-jsi@57.0.4.patch`](patches/expo-modules-jsi@57.0.4.patch)
 - `node-pty@1.1.0` — [`patches/node-pty@1.1.0.patch`](patches/node-pty@1.1.0.patch)
 
 ## Official Claude Code platform payloads
@@ -126,6 +134,7 @@ External packages **directly declared** only by repository tooling, test infrast
 
 | Package | License |
 | --- | --- |
+| [`@babel/generator`](https://github.com/babel/babel) | MIT |
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |

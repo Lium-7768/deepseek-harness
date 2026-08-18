@@ -41,11 +41,18 @@ export class DshLoopbackClient {
       body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
     })
     if (!response.ok) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
-    const message = await response.json() as RpcResponse<T>
+    const message = (await response.json()) as RpcResponse<T>
     if (message.type !== 'server-response' || message.rpcId !== rpcId) {
       throw new DshLoopbackError('upstream-unavailable', 'DSH returned an invalid RPC response.')
     }
-    if (!message.result.ok) throw new DshLoopbackError('upstream-rejected', message.result.error.message)
+    if (!message.result.ok) {
+      throw new DshLoopbackError(
+        'upstream-rejected',
+        message.result.error.message,
+        message.result.error.code,
+        message.result.error.details,
+      )
+    }
     return message.result.value
   }
 
@@ -57,15 +64,22 @@ export class DshLoopbackClient {
       body: JSON.stringify({ type: 'client-response', ...message }),
     })
     if (!response.ok) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
-    const receipt = await response.json() as { accepted?: boolean; reason?: string }
-    if (receipt.accepted !== true) throw new DshLoopbackError('upstream-rejected', receipt.reason ?? 'DSH rejected the interaction response.')
+    const receipt = (await response.json()) as { accepted?: boolean; reason?: string }
+    if (receipt.accepted !== true)
+      throw new DshLoopbackError('upstream-rejected', receipt.reason ?? 'DSH rejected the interaction response.')
     return receipt
   }
 
-  /** Streams validated DSH mux server requests until the caller aborts. */
+  /** Streams validated DSH mux server requests over the host's SSE downlink. */
   async *mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
-    const response = await fetch(new URL('/api/events.mux', this.#baseUrl), { headers: { host: this.#baseUrl.host }, signal })
-    if (!response.ok || response.body === null) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    const response = await fetch(new URL('/api/events.mux', this.#baseUrl), {
+      method: 'GET',
+      headers: { accept: 'text/event-stream', host: this.#baseUrl.host },
+      signal,
+    })
+    if (!response.ok || response.body === null)
+      throw new DshLoopbackError('upstream-unavailable', `DSH SSE mux connection failed (HTTP ${response.status}).`)
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -74,16 +88,18 @@ export class DshLoopbackClient {
         const { done, value } = await reader.read()
         if (done) return
         buffer += decoder.decode(value, { stream: true })
-        let boundary = buffer.indexOf('\n\n')
-        while (boundary !== -1) {
+        let boundary: number
+        while ((boundary = buffer.indexOf('\n\n')) !== -1) {
           const chunk = buffer.slice(0, boundary)
           buffer = buffer.slice(boundary + 2)
-          const data = chunk.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('')
-          if (data !== '') {
-            const envelope = parseMuxEnvelope(data)
-            if (envelope !== undefined) yield envelope
-          }
-          boundary = buffer.indexOf('\n\n')
+          const data = chunk
+            .split('\n')
+            .filter(line => line.startsWith('data: '))
+            .map(line => line.slice(6))
+            .join('')
+          if (data === '') continue
+          const envelope = parseMuxEnvelope(data)
+          if (envelope !== undefined) yield envelope
         }
       }
     } finally {
@@ -108,10 +124,19 @@ function parseMuxEnvelope(data: string): { rpcId: string; payload: Record<string
 /** An upstream DSH fault translated to a Mobile Gateway-safe error. */
 export class DshLoopbackError extends Error {
   readonly code: 'upstream-unavailable' | 'upstream-rejected'
+  readonly upstreamCode: string | undefined
+  readonly details: unknown | undefined
 
-  /** @param code - Mobile error category. @param message - Safe operator message. */
-  constructor(code: DshLoopbackError['code'], message: string) {
+  /**
+   * @param code - Mobile transport category.
+   * @param message - Upstream message retained for diagnostics.
+   * @param upstreamCode - DSH business error code, when the RPC was rejected.
+   * @param details - DSH business error details, when the RPC was rejected.
+   */
+  constructor(code: DshLoopbackError['code'], message: string, upstreamCode?: string, details?: unknown) {
     super(message)
     this.code = code
+    this.upstreamCode = upstreamCode
+    this.details = details
   }
 }

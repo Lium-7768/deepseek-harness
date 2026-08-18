@@ -1,12 +1,29 @@
 import type { PropsWithChildren } from 'react'
-import { SafeAreaView, ScrollView, StyleSheet } from 'react-native'
-
-/** Provides consistent native-safe padding for each mobile product screen. */
-export function Screen({ children }: PropsWithChildren): React.JSX.Element {
-  return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.content}>{children}</ScrollView></SafeAreaView>
+import { ScrollView, StyleSheet, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { mobileTheme } from '@/theme'
+export interface ScreenProps extends PropsWithChildren {
+  scroll?: boolean
 }
-
+export function Screen({ children, scroll = true }: ScreenProps): React.JSX.Element {
+  return (
+    <SafeAreaView style={styles.safe}>
+      {scroll ? (
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={styles.content}>{children}</View>
+      )}
+    </SafeAreaView>
+  )
+}
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f6f7fb' },
-  content: { flexGrow: 1, gap: 16, padding: 20 },
+  safe: { flex: 1, backgroundColor: mobileTheme.colors.background },
+  content: { flex: 1, gap: mobileTheme.spacing.md, padding: mobileTheme.spacing.lg },
 })

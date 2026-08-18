@@ -54,7 +54,10 @@ export class MobileDeviceRegistry {
 
   /** Returns a durable snapshot containing token hashes but no access tokens. */
   snapshot(): readonly MobileDeviceSnapshot[] {
-    return [...this.#devices.values()].map(device => ({ ...publicDevice(device), tokenHash: Buffer.from(device.tokenHash).toString('base64') }))
+    return [...this.#devices.values()].map(device => ({
+      ...publicDevice(device),
+      tokenHash: Buffer.from(device.tokenHash).toString('base64'),
+    }))
   }
 
   /** Revokes a paired device immediately. */
@@ -69,10 +72,13 @@ export class MobileDeviceRegistry {
   authenticate(authorization: string | undefined): MobileDevice | undefined {
     const match = authorization?.match(/^Bearer ([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/)
     if (match === null || match === undefined) return undefined
-    const device = this.#devices.get(match[1])
+    const [, deviceId, accessToken] = match
+    if (deviceId === undefined || accessToken === undefined) return undefined
+    const device = this.#devices.get(deviceId)
     if (device === undefined || device.revokedAt !== undefined) return undefined
-    const candidate = tokenHash(match[2])
-    if (candidate.byteLength !== device.tokenHash.byteLength || !timingSafeEqual(candidate, device.tokenHash)) return undefined
+    const candidate = tokenHash(accessToken)
+    if (candidate.byteLength !== device.tokenHash.byteLength || !timingSafeEqual(candidate, device.tokenHash))
+      return undefined
     return publicDevice(device)
   }
 }

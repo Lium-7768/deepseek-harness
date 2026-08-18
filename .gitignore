@@ -38,3 +38,5 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+.tmp-ios-e2e/
+apps/.tmp-ios-e2e/

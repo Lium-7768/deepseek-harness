@@ -1,10 +1,33 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useMemo, useState } from 'react'
-import { Alert, Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { MobileApi } from '@/api/mobile-api'
-import { Screen } from '@/components/screen'
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
+import { mobileTheme } from '@/theme'
+import { NativeActionButton } from '@/components/native-action-button'
+import { WorkspaceShell } from '@/components/workspace-shell'
+import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
+import { NativeIcon } from '@/components/native-icon'
+import {
+  interactionListState,
+  questionOptionAccessibility,
+  type InteractionListState,
+} from '@/components/interaction-state'
 import { useConnectionStore } from '@/state/connection'
+import { useRouteSessionSelection } from '@/state/session-selection'
 import type {
   DshQuestion,
   PendingApprovalInteraction,
@@ -36,47 +59,134 @@ type QuestionCardProps = {
 /** Presents current DSH approvals and questions as native, session-scoped controls. */
 export default function InteractionsScreen(): React.JSX.Element {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>()
+  const insets = useSafeAreaInsets()
+  useRouteSessionSelection(typeof sessionId === 'string' ? sessionId : undefined)
   const connection = useConnectionStore(state => state.connection)
-  const client = new MobileApi(requireConnection(connection))
+  const client = connection === undefined ? undefined : new MobileApi(connection)
   const queryClient = useQueryClient()
   const interactions = useQuery({
     queryKey: ['session-interactions', sessionId],
-    queryFn: () => client.pendingInteractions(sessionId),
+    enabled: client !== undefined && typeof sessionId === 'string' && sessionId.length > 0,
+    queryFn: () => requireClient(client).pendingInteractions(requireSessionId(sessionId)),
     refetchInterval: 2500,
   })
   const respond = useMutation({
-    mutationFn: ({ rpcId, result }: { rpcId: string; result: unknown }) => client.respondToInteraction(rpcId, result),
+    mutationFn: ({ rpcId, result }: { rpcId: string; result: unknown }) =>
+      requireClient(client).respondToInteraction(rpcId, result),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['session-interactions', sessionId] })
       void queryClient.invalidateQueries({ queryKey: ['session-events', sessionId] })
       void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
     },
-    onError: error => Alert.alert('Response was not sent', error.message),
+    onError: error => Alert.alert('响应发送失败', withErrorContext('无法发送响应', error)),
+  })
+  const listState = interactionListState({
+    hasConnection: connection !== undefined,
+    hasSessionId: typeof sessionId === 'string' && sessionId.length > 0,
+    isLoading: interactions.isLoading,
+    isError: interactions.isError,
+    hasItems: (interactions.data?.items.length ?? 0) > 0,
   })
 
   return (
-    <Screen>
-      <Text style={styles.title}>Review action</Text>
-      <Text style={styles.description}>
-        These requests come from your paired desktop DSH runtime. Respond only after reviewing the details.
-      </Text>
-      {interactions.isError ? <Text style={styles.error}>{interactions.error.message}</Text> : null}
-      {(interactions.data?.items ?? []).map(interaction => (
-        <InteractionCard
-          key={interaction.rpcId}
-          interaction={interaction}
-          submitting={respond.isPending}
-          onRespond={(rpcId, result) => respond.mutate({ rpcId, result })}
+    <WorkspaceShell
+      title="待处理操作"
+      showMenu={false}
+      leftAction={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="返回会话"
+          hitSlop={8}
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+        >
+          <NativeIcon name="arrow-back" color={mobileTheme.colors.ink} size={20} />
+        </Pressable>
+      }
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? workspaceKeyboardVerticalOffset(insets.top, false) : 0}
+        style={styles.container}
+      >
+        <FlatList
+          style={styles.container}
+          data={interactions.data?.items ?? []}
+          keyExtractor={interaction => interaction.rpcId}
+          renderItem={({ item }) => (
+            <InteractionCard
+              interaction={item}
+              submitting={respond.isPending}
+              onRespond={(rpcId, result) => respond.mutate({ rpcId, result })}
+            />
+          )}
+          contentContainerStyle={styles.listContent}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={interactions.isRefetching}
+              onRefresh={() => void interactions.refetch()}
+              tintColor={mobileTheme.colors.accent}
+            />
+          }
+          ListHeaderComponent={
+            <View style={styles.intro}>
+              <Text style={styles.title}>处理待办操作</Text>
+              <Text style={styles.description}>以下请求来自已配对的桌面端 DSH 运行时。请查看详情后再响应。</Text>
+            </View>
+          }
+          ListEmptyComponent={<InteractionListStateView query={interactions} state={listState} />}
         />
-      ))}
-      {interactions.isSuccess && interactions.data.items.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>Nothing needs your response</Text>
-          <Text style={styles.emptyText}>Return to the session to continue following the conversation.</Text>
-          <Button title="Back to session" onPress={() => router.back()} />
-        </View>
-      ) : null}
-    </Screen>
+      </KeyboardAvoidingView>
+    </WorkspaceShell>
+  )
+}
+
+function InteractionListStateView({
+  query,
+  state,
+}: {
+  query: { error: Error | null; refetch: () => Promise<unknown> }
+  state: InteractionListState
+}): React.JSX.Element | null {
+  if (state === 'ready') return null
+  if (state === 'disconnected')
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyTitle}>尚未连接桌面端</Text>
+        <Text style={styles.emptyText}>请先完成配对，再查看待处理操作。</Text>
+        <NativeActionButton label="去连接" icon="link" onPress={() => router.replace('/connect')} />
+      </View>
+    )
+  if (state === 'invalid-session')
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyTitle}>会话标识无效</Text>
+        <Text style={styles.emptyText}>返回会话后重试。</Text>
+        <NativeActionButton label="返回会话" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
+      </View>
+    )
+  if (state === 'loading')
+    return (
+      <View style={styles.empty}>
+        <ActivityIndicator color={mobileTheme.colors.accent} />
+        <Text style={styles.emptyText}>正在加载待处理操作…</Text>
+      </View>
+    )
+  if (state === 'error')
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyTitle}>加载失败</Text>
+        <Text style={styles.error}>{withErrorContext('待处理操作加载失败', query.error)}</Text>
+        <NativeActionButton label="重新加载" icon="refresh" variant="secondary" onPress={() => void query.refetch()} />
+      </View>
+    )
+  return (
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>暂无待处理操作</Text>
+      <Text style={styles.emptyText}>新的权限请求或问题会显示在这里。</Text>
+    </View>
   )
 }
 
@@ -89,7 +199,7 @@ function InteractionCard({ interaction, submitting, onRespond }: InteractionCard
 
 function ApprovalCard({ interaction, submitting, onRespond }: ApprovalCardProps): React.JSX.Element {
   const { payload } = interaction
-  const reason = payload.reason ?? 'DSH requested permission to use this tool.'
+  const reason = payload.reason ?? 'DSH 请求使用此工具的权限。'
   const answer = (outcome: 'allowed-once' | 'rejected') => {
     onRespond(interaction.rpcId, {
       ok: true,
@@ -102,13 +212,26 @@ function ApprovalCard({ interaction, submitting, onRespond }: ApprovalCardProps)
   }
   return (
     <View style={styles.card}>
-      <Text style={styles.kicker}>Approval request</Text>
+      <Text style={styles.kicker}>权限请求</Text>
       <Text style={styles.cardTitle}>{payload.toolName}</Text>
       <Text style={styles.body}>{reason}</Text>
-      <Text style={styles.metadata}>Request {payload.approvalId}</Text>
+      <Text style={styles.metadata}>请求 {payload.approvalId}</Text>
       <View style={styles.buttonRow}>
-        <Button title="Reject" color="#b91c1c" disabled={submitting} onPress={() => answer('rejected')} />
-        <Button title="Allow once" disabled={submitting} onPress={() => answer('allowed-once')} />
+        <NativeActionButton
+          label="拒绝"
+          icon="close"
+          variant="danger"
+          disabled={submitting}
+          onPress={() => answer('rejected')}
+          style={styles.approvalButton}
+        />
+        <NativeActionButton
+          label="仅允许一次"
+          icon="check"
+          disabled={submitting}
+          onPress={() => answer('allowed-once')}
+          style={styles.approvalButton}
+        />
       </View>
     </View>
   )
@@ -118,10 +241,11 @@ function QuestionCard({ interaction, submitting, onRespond }: QuestionCardProps)
   const [draft, setDraft] = useState<AnswerDraft>({})
   const questions = interaction.payload.questions
   const complete = useMemo(
-    () => questions.every((question) => {
-      const answer = draft[question.id]
-      return answer !== undefined && (answer.selected.length > 0 || answer.custom.trim() !== '')
-    }),
+    () =>
+      questions.every((question) => {
+        const answer = draft[question.id]
+        return answer !== undefined && (answer.selected.length > 0 || answer.custom.trim() !== '')
+      }),
     [draft, questions],
   )
   const update = (questionId: string, value: Partial<AnswerDraft[string]>) => {
@@ -137,29 +261,32 @@ function QuestionCard({ interaction, submitting, onRespond }: QuestionCardProps)
   const toggleOption = (question: DshQuestion, label: string) => {
     const selected = draft[question.id]?.selected ?? []
     const nextSelected = question.multiSelect
-      ? (selected.includes(label) ? selected.filter(item => item !== label) : [...selected, label])
+      ? selected.includes(label)
+        ? selected.filter(item => item !== label)
+        : [...selected, label]
       : [label]
     update(question.id, { selected: nextSelected })
   }
-  const submit = () => onRespond(interaction.rpcId, {
-    ok: true,
-    value: {
-      sessionId: interaction.sessionId,
-      answer: {
-        answers: questions.map((question) => {
-          const answer = draft[question.id] ?? { selected: [], custom: '' }
-          return {
-            id: question.id,
-            selected: answer.selected,
-            ...(answer.custom.trim() === '' ? {} : { custom: answer.custom.trim() }),
-          }
-        }),
+  const submit = () =>
+    onRespond(interaction.rpcId, {
+      ok: true,
+      value: {
+        sessionId: interaction.sessionId,
+        answer: {
+          answers: questions.map((question) => {
+            const answer = draft[question.id] ?? { selected: [], custom: '' }
+            return {
+              id: question.id,
+              selected: answer.selected,
+              ...(answer.custom.trim() === '' ? {} : { custom: answer.custom.trim() }),
+            }
+          }),
+        },
       },
-    },
-  })
+    })
   return (
     <View style={styles.card}>
-      <Text style={styles.kicker}>Question from DSH</Text>
+      <Text style={styles.kicker}>问题</Text>
       {questions.map(question => (
         <View key={question.id} style={styles.question}>
           {question.header !== undefined ? <Text style={styles.questionHeader}>{question.header}</Text> : null}
@@ -167,56 +294,129 @@ function QuestionCard({ interaction, submitting, onRespond }: QuestionCardProps)
           {question.detail !== undefined ? <Text style={styles.body}>{question.detail}</Text> : null}
           {(question.options ?? []).map((option) => {
             const active = (draft[question.id]?.selected ?? []).includes(option.label)
+            const accessibility = questionOptionAccessibility({
+              multiSelect: question.multiSelect === true,
+              selected: active,
+              submitting,
+            })
             return (
               <Pressable
                 key={option.label}
-                accessibilityRole="button"
+                accessibilityRole={accessibility.role}
+                accessibilityLabel={`${option.label}${active ? '，已选中' : ''}`}
+                accessibilityState={accessibility.state}
+                disabled={accessibility.disabled}
                 style={[styles.option, active ? styles.optionActive : undefined]}
                 onPress={() => toggleOption(question, option.label)}
               >
                 <Text style={[styles.optionLabel, active ? styles.optionLabelActive : undefined]}>{option.label}</Text>
-                {option.description !== undefined ? <Text style={styles.optionDescription}>{option.description}</Text> : null}
+                {option.description !== undefined ? (
+                  <Text style={styles.optionDescription}>{option.description}</Text>
+                ) : null}
               </Pressable>
             )
           })}
           <TextInput
+            accessibilityLabel={`自定义回答：${question.question}`}
+            editable={!submitting}
             multiline
-            placeholder="Optional custom answer"
+            placeholder="可选：输入自定义回答"
             style={styles.customAnswer}
             value={draft[question.id]?.custom ?? ''}
             onChangeText={custom => update(question.id, { custom })}
           />
         </View>
       ))}
-      <Button title={submitting ? 'Sending…' : 'Send response'} disabled={submitting || !complete} onPress={submit} />
+      <NativeActionButton
+        label={submitting ? '发送中…' : '发送响应'}
+        icon="send"
+        loading={submitting}
+        disabled={!complete}
+        onPress={submit}
+      />
     </View>
   )
 }
 
-function requireConnection(connection: ReturnType<typeof useConnectionStore.getState>['connection']) {
-  if (connection === undefined) throw new Error('Connect this mobile app to a desktop before reviewing interactions.')
-  return connection
+function requireClient(client: MobileApi | undefined): MobileApi {
+  if (client === undefined) throw new Error('请先将此移动端连接到桌面端，再查看待处理操作。')
+  return client
+}
+
+function requireSessionId(sessionId: string | string[] | undefined): string {
+  if (typeof sessionId !== 'string' || sessionId.length === 0) throw new Error('缺少会话标识，无法加载待处理操作。')
+  return sessionId
+}
+
+function withErrorContext(prefix: string, error: unknown): string {
+  const detail = mobileErrorMessage(error, '请稍后重试。')
+  return `${prefix}：${detail}`
 }
 
 const styles = StyleSheet.create({
-  title: { color: '#111827', fontSize: 28, fontWeight: '700' },
-  description: { color: '#4b5563', lineHeight: 21 },
-  error: { color: '#b91c1c' },
-  card: { backgroundColor: '#ffffff', borderColor: '#e5e7eb', borderRadius: 12, borderWidth: 1, gap: 10, padding: 16 },
+  container: { flex: 1 },
+  listContent: { flexGrow: 1, gap: 12, padding: 16, paddingBottom: 28 },
+  intro: { gap: 8 },
+  headerAction: {
+    alignItems: 'center',
+    height: mobileTheme.touch.iconButton,
+    justifyContent: 'center',
+    width: mobileTheme.touch.iconButton,
+  },
+  title: { color: mobileTheme.colors.ink, fontSize: 28, fontWeight: '700' },
+  description: { color: mobileTheme.colors.inkMuted, lineHeight: 21 },
+  error: { color: mobileTheme.colors.danger },
+  card: {
+    ...mobileTheme.elevation.card,
+    backgroundColor: mobileTheme.colors.surfaceRaised,
+    borderColor: mobileTheme.colors.border,
+    borderRadius: mobileTheme.radius.card,
+    borderWidth: 1,
+    gap: 10,
+    padding: 16,
+  },
   kicker: { color: '#92400e', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
   cardTitle: { color: '#111827', fontSize: 17, fontWeight: '700', lineHeight: 23 },
   body: { color: '#374151', lineHeight: 21 },
   metadata: { color: '#6b7280', fontSize: 12 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
-  question: { borderTopColor: '#e5e7eb', borderTopWidth: 1, gap: 8, paddingTop: 14 },
+  buttonRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  approvalButton: { flex: 1, paddingHorizontal: 8 },
+  question: {
+    borderTopColor: mobileTheme.colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingTop: 14,
+  },
   questionHeader: { color: '#6b7280', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  option: { borderColor: '#d1d5db', borderRadius: 10, borderWidth: 1, gap: 3, padding: 11 },
-  optionActive: { backgroundColor: '#eff6ff', borderColor: '#2563eb' },
+  option: {
+    borderColor: mobileTheme.colors.borderStrong,
+    borderRadius: mobileTheme.radius.control,
+    borderWidth: 1,
+    gap: 3,
+    padding: 11,
+  },
+  optionActive: { backgroundColor: mobileTheme.colors.accentSoft, borderColor: mobileTheme.colors.accent },
   optionLabel: { color: '#1f2937', fontWeight: '600' },
   optionLabelActive: { color: '#1d4ed8' },
   optionDescription: { color: '#6b7280', fontSize: 13, lineHeight: 18 },
-  customAnswer: { borderColor: '#d1d5db', borderRadius: 10, borderWidth: 1, minHeight: 74, padding: 10, textAlignVertical: 'top' },
-  empty: { alignItems: 'stretch', backgroundColor: '#ffffff', borderColor: '#e5e7eb', borderRadius: 12, borderWidth: 1, gap: 10, padding: 18 },
+  customAnswer: {
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    borderWidth: 1,
+    minHeight: 74,
+    padding: 10,
+    textAlignVertical: 'top',
+  },
+  empty: {
+    alignItems: 'stretch',
+    backgroundColor: mobileTheme.colors.surfaceRaised,
+    borderColor: mobileTheme.colors.border,
+    borderRadius: mobileTheme.radius.card,
+    borderWidth: 1,
+    gap: 10,
+    padding: 18,
+  },
   emptyTitle: { color: '#111827', fontSize: 18, fontWeight: '700' },
   emptyText: { color: '#4b5563', lineHeight: 21 },
+  pressed: { opacity: 0.62 },
 })
