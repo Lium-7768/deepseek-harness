@@ -61,7 +61,7 @@ export default function SessionPermissionScreen(): React.JSX.Element {
     if (client === undefined || sessionId === undefined || locked) return
     setSubmitting(value)
     void client
-      .sendMessage(sessionId, `/permission ${value}`)
+      .sendMessage(sessionId, [{ type: 'text', text: `/permission ${value}` }])
       .then(() => {
         void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
         void queryClient.invalidateQueries({ queryKey: ['session-events', sessionId] })

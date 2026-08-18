@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { DrawerContentScrollView, type DrawerContentComponentProps } from 'expo-router/drawer'
 import { useMemo, useState } from 'react'
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MobileApi } from '@/api/mobile-api'
 import { NativeBrandMark } from '@/components/native-brand-mark'
@@ -41,8 +41,10 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [groupBy, setGroupBy] = useState<'workspace' | 'flat'>('workspace')
   const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set())
+  const [expandedSessionId, setExpandedSessionId] = useState<string | undefined>()
   const connection = useConnectionStore(value => value.connection)
   const selectSession = useSessionSelectionStore(value => value.selectSession)
+  const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
@@ -96,6 +98,45 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
       else next.add(workspaceKey)
       return next
     })
+  const refreshSessions = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] })
+  }
+  const createSession = async (): Promise<void> => {
+    try {
+      const created = await new MobileApi(requireConnection(connection)).createSession()
+      await refreshSessions()
+      openSession(created.sessionId)
+    } catch (error) {
+      Alert.alert('新建会话失败', error instanceof Error ? error.message : '请稍后重试。')
+    }
+  }
+  const forkSession = async (sessionId: string): Promise<void> => {
+    try {
+      const created = await new MobileApi(requireConnection(connection)).forkSession(sessionId)
+      await refreshSessions()
+      setExpandedSessionId(undefined)
+      openSession(created.sessionId)
+    } catch (error) {
+      Alert.alert('分叉会话失败', error instanceof Error ? error.message : '请稍后重试。')
+    }
+  }
+  const archiveSession = async (sessionId: string): Promise<void> => {
+    try {
+      await new MobileApi(requireConnection(connection)).archiveSession(sessionId)
+      await refreshSessions()
+      setExpandedSessionId(undefined)
+      if (sessionId === currentSessionId) router.replace('/workspace')
+    } catch (error) {
+      Alert.alert('归档会话失败', error instanceof Error ? error.message : '请稍后重试。')
+    }
+  }
+  const confirmArchive = (session: SessionSummary): void => {
+    const title = typeof session.title === 'string' && session.title.trim() ? session.title : '新会话'
+    Alert.alert('归档会话', `“${title}”将从桌面和手机的活动会话列表中移除。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '归档', style: 'destructive', onPress: () => void archiveSession(session.sessionId) },
+    ])
+  }
 
   return (
     <SafeAreaView edges={['top', 'left', 'bottom']} style={styles.drawerSafe}>
@@ -133,19 +174,19 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
             </Pressable>
           </View>
 
-          <View
-            accessible
+          <Pressable
             accessibilityRole="button"
-            accessibilityLabel="新会话（桌面端专属）"
-            accessibilityState={{ disabled: true }}
-            style={[styles.newSession, styles.disabledAction]}
+            accessibilityLabel="新会话"
+            disabled={!connection}
+            onPress={() => void createSession()}
+            style={({ pressed }) => [styles.newSession, !connection && styles.disabledAction, pressed && styles.pressed]}
           >
-            <NativeIcon name="note-add" size={21} color={mobileTheme.colors.inkFaint} />
+            <NativeIcon name="note-add" size={21} color={connection ? mobileTheme.colors.accent : mobileTheme.colors.inkFaint} />
             <View style={styles.newSessionTextWrap}>
-              <Text style={styles.newSessionTextDisabled}>新会话</Text>
-              <Text style={styles.newSessionHint}>请在桌面端创建</Text>
+              <Text style={connection ? styles.newSessionText : styles.newSessionTextDisabled}>新会话</Text>
+              <Text style={styles.newSessionHint}>{connection ? '在当前桌面端创建' : '请先连接桌面端'}</Text>
             </View>
-          </View>
+          </Pressable>
 
           <View style={styles.workspaceHeader}>
             <Text style={styles.workspaceTitle}>{groupBy === 'workspace' ? '工作区' : '会话'}</Text>
@@ -295,12 +336,42 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                       onPress={() => toggleWorkspace(item.key)}
                     />
                   ) : (
-                    <SessionItem
-                      key={item.key}
-                      session={item.session}
-                      selected={item.session.sessionId === currentSessionId}
-                      onPress={() => openSession(item.session.sessionId)}
-                    />
+                    <View key={item.key}>
+                      <SessionItem
+                        session={item.session}
+                        selected={item.session.sessionId === currentSessionId}
+                        onPress={() => openSession(item.session.sessionId)}
+                        onLongPress={() =>
+                          setExpandedSessionId(current =>
+                            current === item.session.sessionId ? undefined : item.session.sessionId,
+                          )
+                        }
+                      />
+                      {expandedSessionId === item.session.sessionId ? (
+                        <View accessible accessibilityLabel="会话操作" style={styles.sessionActions}>
+                          <NativeListRow
+                            title="重命名"
+                            accessibilityRole="button"
+                            onPress={() =>
+                              router.push({ pathname: '/session/[sessionId]/rename', params: { sessionId: item.session.sessionId } })
+                            }
+                            right={<NativeIcon name="edit" size={18} color={mobileTheme.colors.inkMuted} />}
+                          />
+                          <NativeListRow
+                            title="分叉会话"
+                            accessibilityRole="button"
+                            onPress={() => void forkSession(item.session.sessionId)}
+                            right={<NativeIcon name="route" size={18} color={mobileTheme.colors.inkMuted} />}
+                          />
+                          <NativeListRow
+                            title="归档会话"
+                            accessibilityRole="button"
+                            onPress={() => confirmArchive(item.session)}
+                            right={<NativeIcon name="folder-close" size={18} color={mobileTheme.colors.danger} />}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
                   ),
                 )
               )}
@@ -373,10 +444,12 @@ function SessionItem({
   session,
   selected,
   onPress,
+  onLongPress,
 }: {
   session: SessionSummary
   selected: boolean
   onPress: () => void
+  onLongPress: () => void
 }): React.JSX.Element {
   const title = typeof session.title === 'string' && session.title.trim() ? session.title : '新会话'
   const time = sessionTimeLabel(session)
@@ -386,6 +459,8 @@ function SessionItem({
       accessibilityLabel={`打开会话 ${title}`}
       accessibilityState={{ selected }}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       hitSlop={{ top: 1, bottom: 1 }}
       style={({ pressed }) => [styles.session, selected && styles.selected, pressed && styles.pressed]}
     >
@@ -477,6 +552,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   newSessionTextWrap: { alignItems: 'center', gap: 1 },
+  newSessionText: { color: mobileTheme.colors.ink, fontSize: 15, fontWeight: '600' },
   newSessionTextDisabled: { color: mobileTheme.colors.inkMuted, fontSize: 15, fontWeight: '600' },
   newSessionHint: { color: mobileTheme.colors.inkFaint, fontSize: 10 },
   workspaceHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
@@ -519,6 +595,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: mobileTheme.spacing.xs,
   },
   folderText: { color: mobileTheme.colors.ink, fontSize: mobileTheme.typography.bodyLarge, fontWeight: '500' },
+  sessionActions: {
+    backgroundColor: mobileTheme.colors.surfaceMuted,
+    borderColor: mobileTheme.colors.border,
+    borderRadius: mobileTheme.radius.control,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: mobileTheme.spacing.xs,
+    marginHorizontal: mobileTheme.spacing.sm,
+    overflow: 'hidden',
+  },
   session: {
     alignItems: 'center',
     borderRadius: mobileTheme.radius.card,

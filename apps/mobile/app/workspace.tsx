@@ -13,6 +13,7 @@ import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-lo
 import { useConnectionStore } from '@/state/connection'
 import { useSessionSelectionStore } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
+import type { MobilePromptContent } from '@/types/mobile'
 
 export default function WorkspaceScreen(): React.JSX.Element {
   const navigation = useNavigation<{ openDrawer: () => void }>()
@@ -34,15 +35,13 @@ export default function WorkspaceScreen(): React.JSX.Element {
     selectSessionId(sessionId)
     router.push({ pathname: '/session/[sessionId]', params: { sessionId } })
   }
-  const send = (text: string) => {
-    if (selectedSession === undefined) {
+  const send = async (content: MobilePromptContent): Promise<void> => {
+    if (selectedSession === undefined || !connection) {
       Alert.alert('选择会话', '请先选择一个会话后再发送。')
       return
     }
-    router.push({
-      pathname: '/session/[sessionId]',
-      params: { sessionId: selectedSession.sessionId, draft: text },
-    })
+    await new MobileApi(connection).sendMessage(selectedSession.sessionId, content)
+    router.push({ pathname: '/session/[sessionId]', params: { sessionId: selectedSession.sessionId } })
   }
 
   return (

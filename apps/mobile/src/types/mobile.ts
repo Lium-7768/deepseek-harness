@@ -4,6 +4,27 @@ export interface MobileConnection {
   accessToken: string
 }
 
+/** Image MIME types accepted by the desktop session.prompt API. */
+export type MobileImageMediaType = 'image/gif' | 'image/jpeg' | 'image/png' | 'image/webp'
+
+/** A native-composer content block forwarded unchanged by the Mobile Gateway. */
+export type MobilePromptContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: MobileImageMediaType; data: string; name?: string }
+
+export type MobilePromptContent = MobilePromptContentPart[]
+
+/** One host-owned pending inbox item projected from a DSH `session/queue` mux frame. */
+export interface MobileQueueItem {
+  id: string
+  placement: 'context' | 'queued' | 'steering'
+  message: { content: MobilePromptContent }
+}
+
+export interface MobileQueuePayload {
+  items: MobileQueueItem[]
+}
+
 export interface SessionSummary {
   sessionId: string
   title?: string
@@ -31,11 +52,14 @@ export interface SessionListPayload {
 export interface SessionHistoryItem {
   seq?: number
   event: Record<string, unknown>
+  /** Host-computed desktop tool-card view that clients may render without echoing it back. */
+  view?: unknown
   [key: string]: unknown
 }
 
 export interface SessionHistoryPayload {
   items: SessionHistoryItem[]
+  hasMore?: boolean
   projections?: MobileSessionProjectionsBlock
   [key: string]: unknown
 }

@@ -15,7 +15,12 @@ export interface MobileGatewayStatus {
 }
 
 const LOOPBACK_HOST = '127.0.0.1'
-const MAX_BODY_BYTES = 256 * 1024
+// Supports up to four compressed image blocks while still bounding one paired-device request.
+const MAX_BODY_BYTES = 12 * 1024 * 1024
+const MAX_PROMPT_IMAGES = 4
+const MAX_PROMPT_TEXT_CHARS = 100_000
+const MAX_IMAGE_BASE64_CHARS = 3 * 1024 * 1024
+const IMAGE_MEDIA_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp'])
 
 type PendingInteraction = {
   rpcId: string
@@ -26,7 +31,9 @@ type PendingInteraction = {
 }
 
 type DshHistory = {
-  events?: Array<{ event?: Record<string, unknown> }>
+  events?: Array<{ event?: Record<string, unknown>; view?: unknown }>
+  hasMore?: boolean
+  projections?: unknown
 }
 type DshSessionSummary = { sessionId: string; title?: string; [key: string]: unknown }
 type DshSessionList = { items?: DshSessionSummary[]; [key: string]: unknown }
@@ -46,6 +53,9 @@ export class MobileGateway {
   #status: MobileGatewayStatus | undefined
   #muxAbort: AbortController | undefined
   readonly #pending = new Map<string, PendingInteraction>()
+  // `session/queue` is an authoritative transient mux snapshot. It is never
+  // reconstructed from durable history or written back by the mobile client.
+  readonly #queues = new Map<string, unknown[]>()
 
   /** @param options - Loopback DSH and local listener configuration. */
   constructor(options: MobileGatewayOptions) {
@@ -92,6 +102,7 @@ export class MobileGateway {
     this.#muxAbort?.abort()
     this.#muxAbort = undefined
     this.#pending.clear()
+    this.#queues.clear()
     if (server === undefined) return
     await new Promise<void>((resolve, reject) =>
       server.close(error => (error === undefined ? resolve() : reject(error))),
@@ -155,6 +166,25 @@ export class MobileGateway {
       )
       return
     }
+    if (url.pathname === '/v1/sessions/create') {
+      const workspaceId = optionalText(body.workspaceId)
+      const cwd = optionalText(body.cwd)
+      if (workspaceId !== undefined && cwd !== undefined)
+        throw new GatewayHttpError('bad-request', '新会话只能指定工作区或目录。')
+      const agentPreset = optionalText(body.agentPreset)
+      writeJson(
+        response,
+        200,
+        await this.#response(
+          await this.#dsh.call('session.create', {
+            ...(workspaceId === undefined ? {} : { workspaceId }),
+            ...(cwd === undefined ? {} : { cwd }),
+            ...(agentPreset === undefined ? {} : { agentPreset }),
+          }),
+        ),
+      )
+      return
+    }
     if (url.pathname === '/v1/settings/describe') {
       writeJson(response, 200, await this.#response(await this.#dsh.call('settings.describe', {})))
       return
@@ -210,9 +240,21 @@ export class MobileGateway {
       writeJson(response, 200, await this.#response(await this.#dsh.call('agentPreset.read', { agentPreset })))
       return
     }
+    const queueSnapshot = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/queue$/)
+    if (queueSnapshot !== null) {
+      const sessionId = decodePathSegment(queueSnapshot)
+      writeJson(response, 200, await this.#response({ items: this.#queues.get(sessionId) ?? [] }))
+      return
+    }
     const history = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/history$/)
     if (history !== null) {
-      const value = await this.#dsh.call<DshHistory>('session.history', { sessionId: decodePathSegment(history) })
+      const beforeSeq = optionalNonnegativeInteger(body.beforeSeq, '历史游标必须是非负整数。')
+      const maxMessages = optionalPositiveInteger(body.maxMessages, '历史消息数量必须是正整数。')
+      const value = await this.#dsh.call<DshHistory>('session.history', {
+        sessionId: decodePathSegment(history),
+        ...(beforeSeq === undefined ? {} : { beforeSeq }),
+        ...(maxMessages === undefined ? {} : { maxMessages }),
+      })
       writeJson(response, 200, await this.#response({ ...value, items: toMobileHistoryItems(value) }))
       return
     }
@@ -226,6 +268,59 @@ export class MobileGateway {
         ? 'waiting'
         : inferSessionStatus(items)
       writeJson(response, 200, await this.#response({ since, items, status }))
+      return
+    }
+    const rename = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/rename$/)
+    if (rename !== null) {
+      const title = requireText(body.title, '会话标题不能为空。')
+      writeJson(
+        response,
+        200,
+        await this.#response(
+          await this.#dsh.call('session.rename', { sessionId: decodePathSegment(rename), title }),
+        ),
+      )
+      return
+    }
+    const fork = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/fork$/)
+    if (fork !== null) {
+      const atSeq = optionalNonnegativeInteger(body.atSeq, '分叉位置必须是非负整数。')
+      writeJson(
+        response,
+        200,
+        await this.#response(
+          await this.#dsh.call('session.fork', {
+            sessionId: decodePathSegment(fork),
+            ...(atSeq === undefined ? {} : { atSeq }),
+          }),
+        ),
+      )
+      return
+    }
+    const archive = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/archive$/)
+    if (archive !== null) {
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('workspace.archiveSession', { sessionId: decodePathSegment(archive) })),
+      )
+      return
+    }
+    const attachment = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/attachments\/([^/]+)$/)
+    if (attachment !== null) {
+      const sessionId = decodeURIComponent(attachment[1] ?? '')
+      const attachmentId = decodeURIComponent(attachment[2] ?? '')
+      if (sessionId === '' || attachmentId === '') throw new GatewayHttpError('bad-request', '附件路径无效。')
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session.attachment', { sessionId, attachmentId })))
+      return
+    }
+    const updateQueue = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/queue\/([^/]+)$/)
+    if (updateQueue !== null) {
+      const sessionId = decodeURIComponent(updateQueue[1] ?? '')
+      const itemId = decodeURIComponent(updateQueue[2] ?? '')
+      if (sessionId === '' || itemId === '') throw new GatewayHttpError('bad-request', '队列路径无效。')
+      const action = requireObject(body.action, '队列操作不能为空。')
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session.updateQueue', { sessionId, itemId, action })))
       return
     }
     const models = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/models$/)
@@ -270,9 +365,7 @@ export class MobileGateway {
     }
     const prompt = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/messages$/)
     if (prompt !== null) {
-      const text = typeof body.text === 'string' ? body.text.trim() : ''
-      if (text.length === 0 || text.length > 100_000)
-        throw new GatewayHttpError('bad-request', '消息长度必须在 1 到 100000 个字符之间。')
+      const content = readPromptContent(body)
       writeJson(
         response,
         200,
@@ -280,7 +373,7 @@ export class MobileGateway {
           await this.#dsh.call('session.prompt', {
             sessionId: decodePathSegment(prompt),
             mode: 'queue',
-            content: [{ type: 'text', text }],
+            content,
           }),
         ),
       )
@@ -330,7 +423,13 @@ export class MobileGateway {
   #rememberInteraction(envelope: { rpcId: string; payload: Record<string, unknown> }): void {
     const { payload } = envelope
     const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
-    if (payload.type === 'approval/requested' && sessionId !== undefined && typeof payload.approvalId === 'string') {
+    if (payload.type === 'session/subscribed' && sessionId !== undefined) {
+      // The host omits a queue baseline for an empty queue, so the subscribed
+      // generation boundary must clear any stale cached snapshot first.
+      this.#queues.delete(sessionId)
+    } else if (payload.type === 'session/queue' && sessionId !== undefined && Array.isArray(payload.items)) {
+      this.#queues.set(sessionId, payload.items)
+    } else if (payload.type === 'approval/requested' && sessionId !== undefined && typeof payload.approvalId === 'string') {
       this.#pending.set(envelope.rpcId, {
         rpcId: envelope.rpcId,
         type: 'approval/requested',
@@ -426,6 +525,55 @@ function requireArray(value: unknown, message: string): unknown[] {
   return value
 }
 
+type GatewayPromptContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: string; data: string; name?: string }
+
+function readPromptContent(body: Record<string, unknown>): GatewayPromptContent[] {
+  // Keep the old text body shape for an already-paired app that has not yet
+  // updated, while all current native clients use the content-array contract.
+  const parts = body.content === undefined ? [{ type: 'text', text: body.text }] : requireArray(body.content, '消息内容必须是数组。')
+  if (parts.length === 0 || parts.length > MAX_PROMPT_IMAGES + 1)
+    throw new GatewayHttpError('bad-request', `消息最多包含一段文本和 ${MAX_PROMPT_IMAGES} 张图片。`)
+
+  let imageCount = 0
+  let textCount = 0
+  return parts.map((part, index) => {
+    const item = requireObject(part, `第 ${index + 1} 项消息内容无效。`)
+    if (item.type === 'text') {
+      const text = requireText(item.text, '消息文本不能为空。')
+      if (text.length > MAX_PROMPT_TEXT_CHARS)
+        throw new GatewayHttpError('bad-request', `消息文本不得超过 ${MAX_PROMPT_TEXT_CHARS} 个字符。`)
+      textCount += 1
+      if (textCount > 1) throw new GatewayHttpError('bad-request', '一条消息只能包含一段文本。')
+      return { type: 'text', text }
+    }
+    if (item.type === 'image') {
+      const mediaType = requireText(item.mediaType, '图片类型不能为空。')
+      const data = requireText(item.data, '图片数据不能为空。')
+      if (!IMAGE_MEDIA_TYPES.has(mediaType)) throw new GatewayHttpError('bad-request', '图片格式必须为 GIF、JPEG、PNG 或 WebP。')
+      if (data.length > MAX_IMAGE_BASE64_CHARS || !/^[A-Za-z0-9+/]+={0,2}$/.test(data))
+        throw new GatewayHttpError('bad-request', '图片数据无效或过大。')
+      imageCount += 1
+      if (imageCount > MAX_PROMPT_IMAGES) throw new GatewayHttpError('bad-request', `一条消息最多包含 ${MAX_PROMPT_IMAGES} 张图片。`)
+      const name = item.name === undefined ? undefined : requireText(item.name, '图片文件名不能为空。')
+      if (name !== undefined && name.length > 255) throw new GatewayHttpError('bad-request', '图片文件名过长。')
+      return { type: 'image', mediaType, data, ...(name === undefined ? {} : { name }) }
+    }
+    throw new GatewayHttpError('bad-request', '消息内容类型仅支持文本或图片。')
+  })
+}
+
+function optionalNonnegativeInteger(value: unknown, message: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) throw new GatewayHttpError('bad-request', message)
+  return value
+}
+function optionalPositiveInteger(value: unknown, message: string): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) throw new GatewayHttpError('bad-request', message)
+  return value
+}
 function optionalRevision(value: unknown): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0)
@@ -437,7 +585,7 @@ function toMobileHistoryItems(history: DshHistory): MobileHistoryItem[] {
     const event = entry.event
     if (event === undefined) return []
     const seq = typeof event.seq === 'number' && Number.isInteger(event.seq) ? event.seq : undefined
-    return [{ ...(seq === undefined ? {} : { seq }), event }]
+    return [{ ...(seq === undefined ? {} : { seq }), ...(entry.view === undefined ? {} : { view: entry.view }), event }]
   })
 }
 

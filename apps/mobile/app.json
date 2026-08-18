@@ -8,7 +8,11 @@
     "userInterfaceStyle": "automatic",
     "ios": { "supportsTablet": true, "bundleIdentifier": "ai.deepseek.harness" },
     "android": { "package": "ai.deepseek.harness" },
-    "plugins": ["expo-router", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-image-picker", { "photosPermission": "允许 DeepSeek Harness 访问照片，以便将图片作为消息附件发送给当前会话。" }]
+    ],
     "experiments": { "typedRoutes": true }
   }
 }

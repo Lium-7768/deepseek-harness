@@ -4,6 +4,8 @@ import type {
   MobileConnection,
   MobileGatewayFault,
   MobileModelCatalogPayload,
+  MobilePromptContent,
+  MobileQueuePayload,
   MobileSettingsMutatePayload,
   MobileSettingsNamespaceView,
   MobileSettingsPayload,
@@ -101,9 +103,52 @@ export class MobileApi {
     return this.#post<SessionListPayload>('/v1/sessions/list', {})
   }
 
-  /** Loads the current durable session history. */
-  sessionHistory(sessionId: string): Promise<SessionHistoryPayload> {
-    return this.#post<SessionHistoryPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/history`, {})
+  /** Loads one durable session-history page from the desktop runtime. */
+  sessionHistory(
+    sessionId: string,
+    options: { beforeSeq?: number; maxMessages?: number } = {},
+  ): Promise<SessionHistoryPayload> {
+    return this.#post<SessionHistoryPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/history`, options)
+  }
+
+  /** Creates a desktop-owned session, optionally in one existing workspace. */
+  createSession(input: { workspaceId?: string; cwd?: string; agentPreset?: string } = {}): Promise<{ sessionId: string }> {
+    return this.#post<{ sessionId: string }>('/v1/sessions/create', input)
+  }
+
+  /** Renames one desktop-owned session. */
+  renameSession(sessionId: string, title: string): Promise<{ title: string; seq: number }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/rename`, { title })
+  }
+
+  /** Forks one desktop-owned session at an optional durable event sequence. */
+  forkSession(sessionId: string, atSeq?: number): Promise<{ sessionId: string }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/fork`, {
+      ...(atSeq === undefined ? {} : { atSeq }),
+    })
+  }
+
+  /** Archives one desktop-owned session through the workspace service. */
+  archiveSession(sessionId: string): Promise<{ archivedSessionIds: string[] }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/archive`, {})
+  }
+
+  /** Reads one durable image attachment owned by a session. */
+  readAttachment(sessionId: string, attachmentId: string): Promise<{ attachment: unknown; data: string }> {
+    return this.#post(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      {},
+    )
+  }
+
+  /** Reads the desktop mux-derived pending inbox snapshot for one session. */
+  sessionQueue(sessionId: string): Promise<MobileQueuePayload> {
+    return this.#post<MobileQueuePayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/queue`, {})
+  }
+
+  /** Updates one queued prompt using an existing DSH queue action. */
+  updateQueue(sessionId: string, itemId: string, action: Record<string, unknown>): Promise<{ accepted: true }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(itemId)}`, { action })
   }
 
   /** Polls new session events and derives the current status. */
@@ -121,9 +166,9 @@ export class MobileApi {
     return this.#post('/v1/interactions/respond', { rpcId, result })
   }
 
-  /** Queues one text prompt in the selected DSH session. */
-  sendMessage(sessionId: string, text: string): Promise<unknown> {
-    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { text })
+  /** Queues native text and image content in the selected desktop-owned session. */
+  sendMessage(sessionId: string, content: MobilePromptContent): Promise<unknown> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/messages`, { content })
   }
 
   /** Requests cancellation of the selected DSH session. */

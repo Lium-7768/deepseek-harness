@@ -262,3 +262,182 @@ test('paired devices receive normalized DSH history events', async t => {
     status: 'idle',
   })
 })
+
+
+test('paired devices delegate session lifecycle and history paging to DSH', async t => {
+  let muxResponse
+  const calls = []
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    calls.push({ url: request.url, payload: message.payload })
+    const values = {
+      '/api/session.create': { sessionId: 'created-session' },
+      '/api/session.rename': { title: 'Renamed session', seq: 12 },
+      '/api/session.fork': { sessionId: 'forked-session' },
+      '/api/workspace.archiveSession': { archivedSessionIds: ['session-1'] },
+      '/api/session.history': {
+        events: [{ event: { type: 'assistant/message', seq: 4, content: 'Older response' } }],
+        hasMore: true,
+      },
+    }
+    const value = values[request.url]
+    assert.notEqual(value, undefined, `unexpected DSH route ${request.url}`)
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Lifecycle test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const post = async (path, body) => {
+    const response = await fetch(`${status.url}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+    assert.equal(response.status, 200)
+    return response.json()
+  }
+
+  assert.deepEqual((await post('/v1/sessions/create', { agentPreset: 'standard' })).data, { sessionId: 'created-session' })
+  assert.deepEqual((await post('/v1/sessions/session-1/rename', { title: 'Renamed session' })).data, {
+    title: 'Renamed session',
+    seq: 12,
+  })
+  assert.deepEqual((await post('/v1/sessions/session-1/fork', { atSeq: 9 })).data, { sessionId: 'forked-session' })
+  assert.deepEqual((await post('/v1/sessions/session-1/archive', {})).data, { archivedSessionIds: ['session-1'] })
+  assert.deepEqual((await post('/v1/sessions/session-1/history', { beforeSeq: 5, maxMessages: 20 })).data.items, [
+    { seq: 4, event: { type: 'assistant/message', seq: 4, content: 'Older response' } },
+  ])
+  assert.deepEqual(calls, [
+    { url: '/api/session.create', payload: { agentPreset: 'standard' } },
+    { url: '/api/session.rename', payload: { sessionId: 'session-1', title: 'Renamed session' } },
+    { url: '/api/session.fork', payload: { sessionId: 'session-1', atSeq: 9 } },
+    { url: '/api/workspace.archiveSession', payload: { sessionId: 'session-1' } },
+    { url: '/api/session.history', payload: { sessionId: 'session-1', beforeSeq: 5, maxMessages: 20 } },
+  ])
+})
+
+
+test('paired devices forward validated text and image prompt content to DSH', async t => {
+  let muxResponse
+  let promptPayload
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    assert.equal(request.url, '/api/session.prompt')
+    promptPayload = message.payload
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value: { accepted: true } } }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Image prompt test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const content = [
+    { type: 'text', text: '请分析这张图片' },
+    { type: 'image', mediaType: 'image/jpeg', data: 'aGVsbG8=', name: 'fixture.jpg' },
+  ]
+  const accepted = await fetch(`${status.url}/v1/sessions/session-1/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ content }),
+  })
+  assert.equal(accepted.status, 200)
+  assert.deepEqual((await accepted.json()).data, { accepted: true })
+  assert.deepEqual(promptPayload, { sessionId: 'session-1', mode: 'queue', content })
+
+  const invalid = await fetch(`${status.url}/v1/sessions/session-1/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ content: [{ type: 'image', mediaType: 'image/svg+xml', data: 'aGVsbG8=' }] }),
+  })
+  assert.equal(invalid.status, 400)
+  assert.deepEqual((await invalid.json()).error, { code: 'bad-request', message: '图片格式必须为 GIF、JPEG、PNG 或 WebP。' })
+})
+
+
+test('paired devices read the authoritative DSH queue snapshot from the mux stream', async t => {
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Queue snapshot test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const stream = await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream.')
+  const push = payload => stream.write(`data: ${JSON.stringify({ type: 'server-request', rpcId: crypto.randomUUID(), payload })}\n\n`)
+  push({ type: 'session/subscribed', sessionId: 'session-1', lastSeq: 4 })
+  push({
+    type: 'session/queue',
+    sessionId: 'session-1',
+    items: [
+      {
+        id: 'queued-message-1',
+        placement: 'queued',
+        message: { id: 'message-1', role: 'user', content: [{ type: 'text', text: 'Queued fixture' }] },
+      },
+    ],
+  })
+  const snapshot = await eventually(async () => {
+    const response = await fetch(`${status.url}/v1/sessions/session-1/queue`, { method: 'POST', headers, body: '{}' })
+    const payload = await response.json()
+    return payload.data?.items?.length === 1 ? payload : undefined
+  }, 'Gateway did not retain the DSH queue snapshot.')
+  assert.deepEqual(snapshot.data.items, [
+    {
+      id: 'queued-message-1',
+      placement: 'queued',
+      message: { id: 'message-1', role: 'user', content: [{ type: 'text', text: 'Queued fixture' }] },
+    },
+  ])
+  push({ type: 'session/subscribed', sessionId: 'session-1', lastSeq: 5 })
+  const cleared = await eventually(async () => {
+    const response = await fetch(`${status.url}/v1/sessions/session-1/queue`, { method: 'POST', headers, body: '{}' })
+    const payload = await response.json()
+    return payload.data?.items?.length === 0 ? payload : undefined
+  }, 'Gateway did not clear a stale queue snapshot at the next subscription boundary.')
+  assert.deepEqual(cleared.data, { items: [] })
+})

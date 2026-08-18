@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard'
 import { NativeActionButton } from '@/components/native-action-button'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeMarkdown } from '@/components/native-markdown'
+import { NativeQueueDock } from '@/components/native-queue-dock'
 import { NativeToolCard } from '@/components/native-tool-card'
 import { NativeIcon } from '@/components/native-icon'
 import { WorkspaceComposer } from '@/components/workspace-composer'
@@ -29,6 +30,7 @@ import { sessionStatisticsLine } from '@/components/session-stats-logic'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
+import type { MobilePromptContent } from '@/types/mobile'
 import {
   projectVisibleMessages,
   type SharedEventItem,
@@ -47,9 +49,13 @@ export default function SessionScreen(): React.JSX.Element {
   const queryClient = useQueryClient()
   const listRef = useRef<FlatList<SharedMessagePresentation>>(null)
   const submittedDraft = useRef<string | undefined>(undefined)
+  const hasScrolledToLatest = useRef(false)
   const [since, setSince] = useState(0)
   const [liveItems, setLiveItems] = useState<SharedEventItem[]>([])
+  const [olderItems, setOlderItems] = useState<SharedEventItem[]>([])
+  const [olderHasMore, setOlderHasMore] = useState<boolean | undefined>()
   const [tab, setTab] = useState<WorkbenchTab>('chat')
+  const retrySend = useRef<(content: MobilePromptContent) => void>(() => undefined)
   const ready = Boolean(client && sessionId)
   const history = useQuery({
     queryKey: ['session-history', sessionId],
@@ -65,6 +71,15 @@ export default function SessionScreen(): React.JSX.Element {
     queryFn: () => {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
       return client.sessionEvents(sessionId, since)
+    },
+    refetchInterval: 2500,
+  })
+  const queue = useQuery({
+    queryKey: ['session-queue', sessionId],
+    enabled: ready,
+    queryFn: () => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.sessionQueue(sessionId)
     },
     refetchInterval: 2500,
   })
@@ -93,13 +108,39 @@ export default function SessionScreen(): React.JSX.Element {
       return client.sessionModels(sessionId)
     },
   })
-  const send = useMutation({
-    mutationFn: (text: string) => {
+  const loadOlder = useMutation({
+    mutationFn: async () => {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
-      return client.sendMessage(sessionId, text)
+      const source = mergeEventItems(history.data?.items ?? [], olderItems)
+      const beforeSeq = Math.min(...source.flatMap(item => (typeof item.seq === 'number' ? [item.seq] : [])))
+      if (!Number.isFinite(beforeSeq)) throw new Error('当前没有可分页的历史记录。')
+      return client.sessionHistory(sessionId, { beforeSeq, maxMessages: 200 })
+    },
+    onSuccess: (page) => {
+      setOlderItems(current => mergeEventItems(page.items, current))
+      setOlderHasMore(page.hasMore ?? false)
+    },
+    onError: error => Alert.alert('加载更早消息失败', withErrorContext('历史记录未加载', error)),
+  })
+  const send = useMutation({
+    mutationFn: (content: MobilePromptContent) => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.sendMessage(sessionId, content)
     },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] }),
-    onError: error => Alert.alert('消息发送失败', withErrorContext('消息未发送，请稍后重试', error)),
+    onError: (error, content) =>
+      Alert.alert('消息发送失败', withErrorContext('消息未发送，请稍后重试', error), [
+        { text: '关闭', style: 'cancel' },
+        { text: '重试', onPress: () => retrySend.current(content) },
+      ]),
+  })
+  retrySend.current = send.mutate
+  const updateQueue = useMutation({
+    mutationFn: ({ itemId, action }: { itemId: string; action: Record<string, unknown> }) => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.updateQueue(sessionId, itemId, action)
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['session-queue', sessionId] }),
   })
   const cancel = useMutation({
     mutationFn: () => {
@@ -119,8 +160,11 @@ export default function SessionScreen(): React.JSX.Element {
 
   useEffect(() => {
     submittedDraft.current = undefined
+    hasScrolledToLatest.current = false
     setSince(0)
     setLiveItems([])
+    setOlderItems([])
+    setOlderHasMore(undefined)
   }, [sessionId])
 
   useEffect(() => {
@@ -135,7 +179,7 @@ export default function SessionScreen(): React.JSX.Element {
     const value = firstParam(draft)
     if (!client || !sessionId || !value || submittedDraft.current === value) return
     submittedDraft.current = value
-    sendMessage.current(value)
+    sendMessage.current([{ type: 'text', text: value }])
   }, [client, draft, sessionId])
 
   useEffect(() => {
@@ -147,10 +191,11 @@ export default function SessionScreen(): React.JSX.Element {
   }, [events.data])
 
   const sourceItems = useMemo(
-    () => mergeEventItems(history.data?.items ?? [], liveItems),
-    [history.data?.items, liveItems],
+    () => mergeEventItems(olderItems, history.data?.items ?? [], liveItems),
+    [history.data?.items, liveItems, olderItems],
   )
   const messages = useMemo(() => projectVisibleMessages(sourceItems), [sourceItems])
+  const hasMoreHistory = olderHasMore ?? history.data?.hasMore ?? false
   const actions = interactions.data?.items.length ?? 0
   const status = events.data?.status ?? '正在连接'
   const displayStatus = connection ? status : 'disconnected'
@@ -215,6 +260,21 @@ export default function SessionScreen(): React.JSX.Element {
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
+              ListHeaderComponent={
+                hasMoreHistory ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="加载更早消息"
+                    accessibilityState={{ busy: loadOlder.isPending }}
+                    disabled={loadOlder.isPending}
+                    onPress={() => void loadOlder.mutateAsync()}
+                    style={({ pressed }) => [s.loadOlder, pressed && s.pressed]}
+                  >
+                    <NativeIcon name="expand-less" size={16} color={mobileTheme.colors.accentText} />
+                    <Text style={s.loadOlderText}>{loadOlder.isPending ? '正在加载…' : '加载更早消息'}</Text>
+                  </Pressable>
+                ) : null
+              }
               ListEmptyComponent={
                 history.isPending ? (
                   <Text style={s.empty}>正在加载会话消息…</Text>
@@ -222,16 +282,26 @@ export default function SessionScreen(): React.JSX.Element {
                   <Text style={s.empty}>此会话暂无可见消息。</Text>
                 )
               }
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+              onContentSizeChange={() => {
+                if (!hasScrolledToLatest.current && messages.length > 0) {
+                  hasScrolledToLatest.current = true
+                  listRef.current?.scrollToEnd({ animated: false })
+                }
+              }}
             />
             {tab === 'chat' ? (
               <LocalizedSessionStats items={sourceItems} projectionValues={history.data?.projections?.values} />
             ) : null}
+            <NativeQueueDock
+              items={queue.data?.items ?? []}
+              onUpdate={(itemId, action) => updateQueue.mutateAsync({ itemId, action }).then(() => undefined)}
+              running={status === 'running'}
+            />
             <WorkspaceComposer
               agentPreset={sessionList.data?.items.find(item => item.sessionId === sessionId)?.agentPreset}
               model={models.data?.current}
               placeholder="在这里输入消息…"
-              onSend={text => send.mutateAsync(text).then(() => undefined)}
+              onSend={content => send.mutateAsync(content).then(() => undefined)}
               onCancel={() => cancel.mutate()}
               permissions={readPermissionSelect(history.data?.projections?.values.permissions)}
               sessionId={sessionId}
@@ -432,6 +502,18 @@ const s = StyleSheet.create({
   unavailableText: { color: mobileTheme.colors.inkMuted, fontSize: 14, textAlign: 'center' },
   unavailableAction: { minWidth: 132 },
   listView: { flex: 1 },
+  loadOlder: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: mobileTheme.colors.accentSoft,
+    borderRadius: mobileTheme.radius.control,
+    flexDirection: 'row',
+    gap: mobileTheme.spacing.xs,
+    marginBottom: mobileTheme.spacing.sm,
+    minHeight: mobileTheme.touch.minTarget,
+    paddingHorizontal: mobileTheme.spacing.md,
+  },
+  loadOlderText: { color: mobileTheme.colors.accentText, fontSize: 13, fontWeight: '700' },
   list: {
     gap: mobileTheme.spacing.lg,
     paddingHorizontal: mobileTheme.spacing.lg,

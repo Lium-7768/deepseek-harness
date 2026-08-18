@@ -61,6 +61,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`expo`](https://github.com/expo/expo) | MIT |
 | [`expo-clipboard`](https://github.com/expo/expo) | MIT |
 | [`expo-constants`](https://github.com/expo/expo) | MIT |
+| [`expo-image-picker`](https://github.com/expo/expo) | MIT |
 | [`expo-linking`](https://github.com/expo/expo) | MIT |
 | [`expo-router`](https://github.com/expo/expo) | MIT |
 | [`expo-secure-store`](https://github.com/expo/expo) | MIT |

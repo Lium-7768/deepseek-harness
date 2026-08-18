@@ -1,6 +1,7 @@
+import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { NativeIcon } from '@/components/native-icon'
 import {
   agentPresetLabel,
@@ -9,8 +10,15 @@ import {
   modelLabel,
   permissionLabel,
 } from '@/components/session-composer-logic'
-import type { MobileModelSelection, MobilePermissionSelect } from '@/types/mobile'
+import type { MobileImageMediaType, MobileModelSelection, MobilePermissionSelect, MobilePromptContent } from '@/types/mobile'
 import { mobileTheme } from '@/theme'
+
+type DraftImage = {
+  data: string
+  mediaType: MobileImageMediaType
+  name?: string
+  uri: string
+}
 
 type Props = {
   agentPreset?: string
@@ -18,7 +26,7 @@ type Props = {
   disabled?: boolean
   model?: MobileModelSelection
   onCancel?: () => void
-  onSend: (text: string) => void | Promise<void>
+  onSend: (content: MobilePromptContent) => void | Promise<void>
   permissions?: MobilePermissionSelect
   placeholder?: string
   running?: boolean
@@ -53,15 +61,59 @@ export function WorkspaceComposer({
   sessionId,
 }: Props): React.JSX.Element {
   const [text, setText] = useState('')
-  const action = composerPrimaryAction({ cancelling, disabled, hasText: text.trim() !== '', running, sending })
+  const [draftImages, setDraftImages] = useState<DraftImage[]>([])
+  const hasContent = text.trim() !== '' || draftImages.length > 0
+  const action = composerPrimaryAction({ cancelling, disabled, hasText: hasContent, running, sending })
   const send = async (): Promise<void> => {
     const value = text.trim()
-    if (action.kind !== 'send' || action.disabled || !value) return
+    if (action.kind !== 'send' || action.disabled || !hasContent) return
+    const content: MobilePromptContent = [
+      ...(value ? [{ type: 'text' as const, text: value }] : []),
+      ...draftImages.map(({ data, mediaType, name }) => ({
+        type: 'image' as const,
+        data,
+        mediaType,
+        ...(name ? { name } : {}),
+      })),
+    ]
     try {
-      await onSend(value)
+      await onSend(content)
       setText('')
+      setDraftImages([])
     } catch {
       // The request owner presents the error; keeping the draft makes retry safe.
+    }
+  }
+  const pickImage = async (): Promise<void> => {
+    if (controlsDisabled || draftImages.length >= 4) return
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsMultipleSelection: true,
+        base64: true,
+        mediaTypes: ['images'],
+        quality: 0.85,
+        selectionLimit: 4 - draftImages.length,
+      })
+      if (result.canceled) return
+      const selected = result.assets.slice(0, 4 - draftImages.length).flatMap((asset) => {
+        if (!asset.base64) return []
+        return [
+          {
+            data: asset.base64,
+            // Expo returns JPEG-encoded base64 for selected library image assets.
+            mediaType: 'image/jpeg' as const,
+            ...(asset.fileName ? { name: asset.fileName } : {}),
+            uri: asset.uri,
+          },
+        ]
+      })
+      if (selected.length === 0) {
+        Alert.alert('无法添加图片', '所选图片未提供可上传的数据，请重新选择。')
+        return
+      }
+      setDraftImages(current => [...current, ...selected].slice(0, 4))
+    } catch {
+      Alert.alert('无法打开照片库', '请检查照片权限后重试。')
     }
   }
   const hasSession = sessionId !== undefined && sessionId.length > 0
@@ -73,6 +125,24 @@ export function WorkspaceComposer({
 
   return (
     <View style={s.wrap}>
+      {draftImages.length > 0 ? (
+        <View accessibilityLabel={`已添加 ${draftImages.length} 张图片`} style={s.previewRow}>
+          {draftImages.map((image, index) => (
+            <View key={`${image.uri}-${index}`} style={s.preview}>
+              <Image accessibilityLabel={image.name ?? `附件图片 ${index + 1}`} source={{ uri: image.uri }} style={s.previewImage} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`移除附件图片 ${index + 1}`}
+                hitSlop={6}
+                onPress={() => setDraftImages(current => current.filter((_, itemIndex) => itemIndex !== index))}
+                style={({ pressed }) => [s.removePreview, pressed && s.pressed]}
+              >
+                <NativeIcon name="close" size={13} color="#fff" />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
       <View style={s.row}>
         <TextInput
           accessibilityLabel="消息输入"
@@ -89,13 +159,22 @@ export function WorkspaceComposer({
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="附件（移动端暂不支持）"
-          accessibilityState={{ disabled: true }}
-          disabled
+          accessibilityLabel={draftImages.length >= 4 ? '最多可添加 4 张图片' : '添加图片附件'}
+          accessibilityState={{ disabled: controlsDisabled || draftImages.length >= 4 }}
+          disabled={controlsDisabled || draftImages.length >= 4}
           hitSlop={4}
-          style={s.icon}
+          onPress={() => void pickImage()}
+          style={({ pressed }) => [
+            s.icon,
+            (controlsDisabled || draftImages.length >= 4) && s.iconDisabled,
+            pressed && s.pressed,
+          ]}
         >
-          <NativeIcon name="attach-file" size={21} color={mobileTheme.colors.inkFaint} />
+          <NativeIcon
+            name="attach-file"
+            size={21}
+            color={controlsDisabled || draftImages.length >= 4 ? mobileTheme.colors.inkFaint : mobileTheme.colors.inkMuted}
+          />
         </Pressable>
         {onCancel !== undefined && action.kind === 'stop' ? (
           <Pressable
@@ -228,6 +307,22 @@ const s = StyleSheet.create({
     paddingHorizontal: mobileTheme.spacing.lg,
     paddingTop: mobileTheme.spacing.md,
   },
+  previewRow: { flexDirection: 'row', gap: mobileTheme.spacing.sm, marginBottom: mobileTheme.spacing.sm },
+  preview: { height: 58, position: 'relative', width: 58 },
+  previewImage: { borderRadius: mobileTheme.radius.control, height: 58, width: 58 },
+  removePreview: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(20, 25, 34, 0.8)',
+    borderColor: mobileTheme.colors.canvas,
+    borderRadius: 10,
+    borderWidth: 1,
+    height: 20,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: -5,
+    top: -5,
+    width: 20,
+  },
   row: {
     alignItems: 'flex-end',
     backgroundColor: mobileTheme.colors.surfaceRaised,
@@ -245,6 +340,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     width: mobileTheme.touch.iconButton,
   },
+  iconDisabled: { opacity: 0.55 },
   send: {
     alignItems: 'center',
     backgroundColor: mobileTheme.colors.accent,

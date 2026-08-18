@@ -39,6 +39,8 @@ PODS:
     - ExpoModulesCore
   - ExpoGlassEffect (57.0.1):
     - ExpoModulesCore
+  - ExpoImagePicker (57.0.11):
+    - ExpoModulesCore
   - ExpoKeepAwake (57.0.1):
     - ExpoModulesCore
   - ExpoLinking (57.0.6):
@@ -2301,11 +2303,12 @@ DEPENDENCIES:
   - "ExpoFileSystem (from `../../../node_modules/.pnpm/expo-file-system@57.0.4_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-nati_ee998d1bb8b3d0d9a241c61b744a179e/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)"
   - "ExpoFont (from `../../../node_modules/.pnpm/expo-font@57.0.1_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-native+metr_99133c2c298f5e8064a9d6a8c8c64b33/node_modules/expo-font/ios/ExpoFont.podspec`)"
   - "ExpoGlassEffect (from `../../../node_modules/.pnpm/expo-glass-effect@57.0.1_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-nat_383c0a6c30087ecc7244d2161cd2817c/node_modules/expo-glass-effect/ios`)"
+  - "ExpoImagePicker (from `../../../node_modules/.pnpm/expo-image-picker@57.0.11_expo@57.0.13/node_modules/expo-image-picker/ios`)"
   - "ExpoKeepAwake (from `../../../node_modules/.pnpm/expo-keep-awake@57.0.1_expo@57.0.13_react@19.2.3/node_modules/expo-keep-awake/ios`)"
   - "ExpoLinking (from `../../../node_modules/.pnpm/expo-linking@57.0.6_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-native+m_9192ded79f94d4065e805a63ffb7c610/node_modules/expo-linking/ios`)"
   - "ExpoLogBox (from `../../../node_modules/.pnpm/@expo+log-box@57.0.2_@expo+dom-webview@57.0.1_expo@57.0.13_react-native@0.86.2_@babel+c_e8d67580bcc65b0480827a7f530d7cd4/node_modules/@expo/log-box`)"
   - "ExpoModulesCore (from `../../../node_modules/.pnpm/expo-modules-core@57.0.11_react-native-worklets@0.10.1_@babel+core@7.29.7_@react-native_90d2985bd7df63ce73b32e70fc45a096/node_modules/expo-modules-core/ExpoModulesCore.podspec`)"
-  - "ExpoModulesJSI (from `../../../node_modules/.pnpm/expo-modules-jsi@57.0.4_react-native@0.86.2_@babel+core@7.29.7_@react-native+metro-conf_006413457797bce11fe1cd71b899ffa9/node_modules/expo-modules-jsi/apple`)"
+  - "ExpoModulesJSI (from `../../../node_modules/.pnpm/expo-modules-jsi@57.0.4_patch_hash=af070ff5feda7e8a4b0c0c0e1924ebd9f9f49546bc8bcc14ef0e_77ca089958c00f09e65570eeb181c210/node_modules/expo-modules-jsi/apple`)"
   - "ExpoModulesWorklets (from `../../../node_modules/.pnpm/expo-modules-core@57.0.11_react-native-worklets@0.10.1_@babel+core@7.29.7_@react-native_90d2985bd7df63ce73b32e70fc45a096/node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)"
   - "ExpoModulesWorkletsAdapter (from `../../../node_modules/.pnpm/expo-modules-core@57.0.11_react-native-worklets@0.10.1_@babel+core@7.29.7_@react-native_90d2985bd7df63ce73b32e70fc45a096/node_modules/expo-modules-core`)"
   - "ExpoRouter (from `../../../node_modules/.pnpm/expo-router@57.0.13_5922fa659991cfa01b9d5e1795c5ab02/node_modules/expo-router/ios`)"
@@ -2413,6 +2416,8 @@ EXTERNAL SOURCES:
     :podspec: "../../../node_modules/.pnpm/expo-font@57.0.1_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-native+metr_99133c2c298f5e8064a9d6a8c8c64b33/node_modules/expo-font/ios/ExpoFont.podspec"
   ExpoGlassEffect:
     :path: "../../../node_modules/.pnpm/expo-glass-effect@57.0.1_expo@57.0.13_react-native@0.86.2_@babel+core@7.29.7_@react-nat_383c0a6c30087ecc7244d2161cd2817c/node_modules/expo-glass-effect/ios"
+  ExpoImagePicker:
+    :path: "../../../node_modules/.pnpm/expo-image-picker@57.0.11_expo@57.0.13/node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
     :path: "../../../node_modules/.pnpm/expo-keep-awake@57.0.1_expo@57.0.13_react@19.2.3/node_modules/expo-keep-awake/ios"
   ExpoLinking:
@@ -2422,7 +2427,7 @@ EXTERNAL SOURCES:
   ExpoModulesCore:
     :podspec: "../../../node_modules/.pnpm/expo-modules-core@57.0.11_react-native-worklets@0.10.1_@babel+core@7.29.7_@react-native_90d2985bd7df63ce73b32e70fc45a096/node_modules/expo-modules-core/ExpoModulesCore.podspec"
   ExpoModulesJSI:
-    :path: "../../../node_modules/.pnpm/expo-modules-jsi@57.0.4_react-native@0.86.2_@babel+core@7.29.7_@react-native+metro-conf_006413457797bce11fe1cd71b899ffa9/node_modules/expo-modules-jsi/apple"
+    :path: "../../../node_modules/.pnpm/expo-modules-jsi@57.0.4_patch_hash=af070ff5feda7e8a4b0c0c0e1924ebd9f9f49546bc8bcc14ef0e_77ca089958c00f09e65570eeb181c210/node_modules/expo-modules-jsi/apple"
   ExpoModulesWorklets:
     :podspec: "../../../node_modules/.pnpm/expo-modules-core@57.0.11_react-native-worklets@0.10.1_@babel+core@7.29.7_@react-native_90d2985bd7df63ce73b32e70fc45a096/node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoModulesWorkletsAdapter:
@@ -2610,6 +2615,7 @@ SPEC CHECKSUMS:
   ExpoFileSystem: 191afda4706089fd14caf9053608b725d8e1fc2f
   ExpoFont: 17668fb7b4e06edf35e015183eb7bc09d83be637
   ExpoGlassEffect: 5d25ad0b43e81255ff5d41039eb2131ebf7aaa5a
+  ExpoImagePicker: edd7229fbbe36cd373a39f2b502a656d4f490504
   ExpoKeepAwake: 20a87dafdd9d84d68673e8eaf1a1c7eed8f92659
   ExpoLinking: 29a4c300814009f5bd30bb95abd11a6c5ef2733b
   ExpoLogBox: 40f17ecef6fcb296b5f5ee4d6ec85cc82ce6ba0f
@@ -2631,7 +2637,7 @@ SPEC CHECKSUMS:
   React: 4b2532a459d15e1adf6c22d3e399e5c85a94220f
   React-callinvoker: 0b8ce4057e02a0bd15cf0532596e8eb8c0392e92
   React-Core: 52b990bb36640833e636d5efc817ad4700dd7f93
-  React-Core-prebuilt: 5e727bb5adfb37367fe4d9d0c5e2bac5ad4e7e48
+  React-Core-prebuilt: 39eb00d8ba4922167a3a70e2039b102fe42b6fe1
   React-CoreModules: 43516d84b3851a850a835d32ec740db319e7bf9e
   React-cxxreact: 9254233b543b9f49bdbcad329603e70be5582a0e
   React-debug: 6bc17013f4dc724c23c91e1c83220251d1eacee6
