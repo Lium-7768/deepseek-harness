@@ -1,9 +1,20 @@
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { NativeIcon, type NativeIconName } from '@/components/native-icon'
+import type { NativeConversationRow } from '@/components/session-conversation-logic'
 import { mobileTheme } from '@/theme'
 import type { SharedMessagePresentation } from '@deepseek-ai/dsh-client-ui-shared'
+
 type Variant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'code' | 'web' | 'other'
+type ToolRow = Extract<NativeConversationRow, { kind: 'tool' }>
+type ToolCardModel = {
+  output?: string
+  state: 'completed' | 'failed' | 'running'
+  summary?: string
+  toolInput?: string
+  toolName: string
+}
+
 function variantFor(name?: string): Variant {
   const value = (name ?? '').toLowerCase()
   if (/search|grep|find/.test(value)) return 'search'
@@ -15,6 +26,7 @@ function variantFor(name?: string): Variant {
   if (/web|browser|fetch/.test(value)) return 'web'
   return 'other'
 }
+
 const META: Record<Variant, [NativeIconName, string]> = {
   search: ['search', '搜索'],
   read: ['description', '读取'],
@@ -25,80 +37,82 @@ const META: Record<Variant, [NativeIconName, string]> = {
   web: ['language', '网页'],
   other: ['build', '工具'],
 }
-export function NativeToolCard({ presentation }: { presentation: SharedMessagePresentation }): React.JSX.Element {
+
+/**
+ * Renders one desktop-derived tool lifecycle as a compact native conversation row.
+ *
+ * @param props.presentation - Legacy shared projection used by the subagent view.
+ * @param props.row - Full primary-session projection with desktop tool metadata.
+ * @returns An expandable compact tool row.
+ */
+export function NativeToolCard({ presentation, row }: { presentation?: SharedMessagePresentation; row?: ToolRow }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
-  const [icon, title] = useMemo(() => META[variantFor(presentation.toolName)], [presentation.toolName])
-  const state = presentation.toolState ?? 'running'
-  const stateLabel = state === 'completed' ? '已完成' : state === 'failed' ? '失败' : '运行中'
-  const summary = presentation.toolInput ?? presentation.text
+  const model = useMemo<ToolCardModel>(() => {
+    if (row !== undefined) {
+      return {
+        state: row.state,
+        toolName: row.toolName,
+        ...(row.summary === undefined ? {} : { summary: row.summary }),
+        ...(row.toolInput === undefined ? {} : { toolInput: row.toolInput }),
+        ...(row.output === undefined ? {} : { output: row.output }),
+      }
+    }
+    return {
+      state: presentation?.toolState ?? 'running',
+      toolName: presentation?.toolName ?? '工具调用',
+      ...(presentation?.toolInput === undefined ? {} : { toolInput: presentation.toolInput }),
+      ...(presentation?.toolOutput === undefined ? {} : { output: presentation.toolOutput }),
+      ...(presentation?.text ? { summary: presentation.text } : {}),
+    }
+  }, [presentation, row])
+  const [icon, fallbackTitle] = useMemo(() => META[variantFor(model.toolName)], [model.toolName])
+  const title = model.toolName || fallbackTitle
+  const stateLabel = model.state === 'completed' ? '已完成' : model.state === 'failed' ? '失败' : '运行中'
   const details = [
-    presentation.toolInput ? `输入\n${presentation.toolInput}` : '',
-    presentation.toolOutput ? `输出\n${presentation.toolOutput}` : presentation.text,
+    model.toolInput ? `输入\n${model.toolInput}` : '',
+    model.output ? `输出\n${model.output}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')
   const hasDetails = details.length > 0
-  const header = (
-    <>
-      <View style={[styles.icon, state === 'failed' && styles.failedIcon]}>
-        <NativeIcon
-          name={icon}
-          size={16}
-          color={state === 'failed' ? mobileTheme.colors.danger : mobileTheme.colors.accent}
-        />
-      </View>
-      <View style={styles.titleStack}>
-        <Text style={styles.title}>{title}</Text>
-        <Text numberOfLines={expanded ? undefined : 1} style={styles.summary}>
-          {summary || '暂无输出摘要'}
-        </Text>
-      </View>
-      <View style={styles.stateStack}>
-        <View
-          style={[
-            styles.dot,
-            state === 'completed' ? styles.doneDot : state === 'failed' ? styles.failDot : styles.runningDot,
-          ]}
-        />
-        <Text
-          style={[
-            styles.state,
-            state === 'completed' ? styles.doneText : state === 'failed' ? styles.failText : styles.runningText,
-          ]}
-        >
-          {stateLabel}
-        </Text>
-        {hasDetails ? (
-          <NativeIcon name={expanded ? 'expand-less' : 'expand-more'} size={16} color={mobileTheme.colors.inkFaint} />
-        ) : null}
-      </View>
-    </>
-  )
   return (
-    <View style={[styles.card, state === 'failed' && styles.failedCard]}>
-      {hasDetails ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${title}工具${stateLabel}`}
-          accessibilityState={{ busy: state === 'running' }}
-          onPress={() => setExpanded(value => !value)}
-          style={styles.header}
-        >
-          {header}
-        </Pressable>
-      ) : (
-        <View
-          accessible
-          accessibilityLabel={`${title}工具${stateLabel}`}
-          accessibilityState={{ busy: state === 'running' }}
-          style={styles.header}
-        >
-          {header}
+    <View style={[styles.root, model.state === 'failed' && styles.failedRoot]}>
+      <Pressable
+        accessibilityRole={hasDetails ? 'button' : undefined}
+        accessibilityLabel={`${title}工具${stateLabel}`}
+        accessibilityState={{ busy: model.state === 'running', expanded: hasDetails ? expanded : undefined }}
+        disabled={!hasDetails}
+        onPress={() => setExpanded(value => !value)}
+        style={({ pressed }) => [styles.row, hasDetails && pressed && styles.pressed]}
+      >
+        <NativeIcon name={icon} size={15} color={model.state === 'failed' ? mobileTheme.colors.danger : mobileTheme.colors.inkMuted} />
+        <Text numberOfLines={1} style={styles.label}>
+          Tool call
+        </Text>
+        <Text style={styles.separator}>·</Text>
+        <Text numberOfLines={1} style={styles.title}>
+          {title}
+        </Text>
+        {model.summary ? (
+          <>
+            <Text style={styles.separator}>·</Text>
+            <Text numberOfLines={1} style={styles.summary}>
+              {model.summary}
+            </Text>
+          </>
+        ) : null}
+        <View style={styles.state}>
+          <View
+            style={[
+              styles.dot,
+              model.state === 'completed' ? styles.completedDot : model.state === 'failed' ? styles.failedDot : styles.runningDot,
+            ]}
+          />
+          {hasDetails ? <NativeIcon name={expanded ? 'expand-less' : 'expand-more'} size={15} color={mobileTheme.colors.inkFaint} /> : null}
         </View>
-      )}
+      </Pressable>
       {expanded ? (
         <View style={styles.details}>
-          <Text style={styles.detailLabel}>详情</Text>
           <Text selectable style={styles.detailText}>
             {details}
           </Text>
@@ -107,52 +121,27 @@ export function NativeToolCard({ presentation }: { presentation: SharedMessagePr
     </View>
   )
 }
+
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: mobileTheme.colors.surfaceRaised,
-    borderColor: mobileTheme.colors.border,
-    borderRadius: mobileTheme.radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    ...mobileTheme.elevation.card,
-  },
-  failedCard: { borderColor: '#f0b7b0' },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: mobileTheme.spacing.sm,
-    minHeight: mobileTheme.touch.minTarget,
-    paddingHorizontal: mobileTheme.spacing.md,
-    paddingVertical: mobileTheme.spacing.xs,
-  },
-  icon: {
-    alignItems: 'center',
-    backgroundColor: mobileTheme.colors.accentSoft,
-    borderRadius: mobileTheme.radius.control,
-    height: mobileTheme.touch.compactIconButton,
-    justifyContent: 'center',
-    width: mobileTheme.touch.compactIconButton,
-  },
-  failedIcon: { backgroundColor: mobileTheme.colors.dangerSoft },
-  titleStack: { flex: 1, gap: 2 },
-  title: { color: mobileTheme.colors.ink, fontSize: 13, fontWeight: '600' },
-  summary: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 16 },
-  stateStack: { alignItems: 'flex-end', gap: 2, minWidth: 68 },
+  root: { borderLeftColor: 'transparent', borderLeftWidth: 2 },
+  failedRoot: { borderLeftColor: mobileTheme.colors.danger },
+  row: { alignItems: 'center', flexDirection: 'row', gap: 5, minHeight: 32, paddingHorizontal: 2, paddingVertical: 4 },
+  pressed: { opacity: 0.62 },
+  label: { color: mobileTheme.colors.inkMuted, fontSize: 12 },
+  separator: { color: mobileTheme.colors.inkFaint, fontSize: 12 },
+  title: { color: mobileTheme.colors.inkMuted, fontSize: 12 },
+  summary: { color: mobileTheme.colors.inkMuted, flex: 1, fontSize: 12 },
+  state: { alignItems: 'center', flexDirection: 'row', gap: 4, marginLeft: 'auto' },
   dot: { borderRadius: 4, height: 7, width: 7 },
   runningDot: { backgroundColor: mobileTheme.colors.warning },
-  doneDot: { backgroundColor: mobileTheme.colors.success },
-  failDot: { backgroundColor: mobileTheme.colors.danger },
-  state: { color: mobileTheme.colors.inkMuted, fontSize: 9, fontWeight: '800' },
-  runningText: { color: mobileTheme.colors.warningText },
-  doneText: { color: mobileTheme.colors.successText },
-  failText: { color: mobileTheme.colors.danger },
+  completedDot: { backgroundColor: mobileTheme.colors.success },
+  failedDot: { backgroundColor: mobileTheme.colors.danger },
   details: {
     backgroundColor: mobileTheme.colors.surfaceMuted,
-    borderTopColor: mobileTheme.colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: mobileTheme.spacing.xs,
-    padding: mobileTheme.spacing.md,
+    borderRadius: mobileTheme.radius.control,
+    marginBottom: 6,
+    marginLeft: 20,
+    padding: mobileTheme.spacing.sm,
   },
-  detailLabel: { color: mobileTheme.colors.inkMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
   detailText: { color: mobileTheme.colors.ink, fontFamily: 'Menlo', fontSize: 12, lineHeight: 18 },
 })

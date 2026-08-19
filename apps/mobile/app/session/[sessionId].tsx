@@ -23,6 +23,12 @@ import { NativeMessageAttachments } from '@/components/native-message-attachment
 import { NativeQueueDock } from '@/components/native-queue-dock'
 import { NativeAgentActivity, NativeGoalBar, goalFromProjection } from '@/components/native-agent-activity'
 import { NativeToolCard } from '@/components/native-tool-card'
+import { NativeReasoningRow, NativeRetryRow, NativeTurnErrorRow, NativeTurnStatus } from '@/components/native-conversation-status'
+import {
+  activeTurnStartedAt,
+  projectNativeConversationRows,
+  type NativeConversationRow,
+} from '@/components/session-conversation-logic'
 import { NativeIcon } from '@/components/native-icon'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
@@ -37,11 +43,7 @@ import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
 import type { MobilePromptContent, SessionEventsPayload } from '@/types/mobile'
-import {
-  projectVisibleMessages,
-  type SharedEventItem,
-  type SharedMessagePresentation,
-} from '@deepseek-ai/dsh-client-ui-shared'
+import { type SharedEventItem } from '@deepseek-ai/dsh-client-ui-shared'
 
 export default function SessionScreen(): React.JSX.Element {
   const { sessionId: rawSessionId, draft } = useLocalSearchParams<{
@@ -53,7 +55,7 @@ export default function SessionScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets()
   const client = useMemo(() => (connection ? new MobileApi(connection) : undefined), [connection])
   const queryClient = useQueryClient()
-  const listRef = useRef<FlatList<SharedMessagePresentation>>(null)
+  const listRef = useRef<FlatList<NativeConversationRow>>(null)
   const submittedDraft = useRef<string | undefined>(undefined)
   const initialLatestPositionPending = useRef(true)
   const nearLatestMessage = useRef(true)
@@ -242,7 +244,8 @@ export default function SessionScreen(): React.JSX.Element {
     () => mergeEventItems(olderItems, history.data?.items ?? [], liveItems),
     [history.data?.items, liveItems, olderItems],
   )
-  const messages = useMemo(() => projectVisibleMessages(sourceItems), [sourceItems])
+  const messages = useMemo(() => projectNativeConversationRows(sourceItems), [sourceItems])
+  const runningTurnStartedAt = useMemo(() => activeTurnStartedAt(sourceItems), [sourceItems])
   const eventBySeq = useMemo(
     () => new Map(sourceItems.flatMap(item => (typeof item.seq === 'number' ? [[item.seq, item.event] as const] : []))),
     [sourceItems],
@@ -330,7 +333,7 @@ export default function SessionScreen(): React.JSX.Element {
               style={tab === 'chat' ? s.listView : s.hidden}
               ref={listRef}
               data={messages}
-              keyExtractor={(item, index) => `message-${item.sourceSeq ?? index}`}
+              keyExtractor={(item, index) => `message-${item.kind}-${item.sourceSeq ?? 'transient'}-${index}`}
               renderItem={({ item }) => (
                 <MessageRow
                   item={item}
@@ -358,6 +361,7 @@ export default function SessionScreen(): React.JSX.Element {
                   </Pressable>
                 ) : null
               }
+              ListFooterComponent={status === 'running' ? <NativeTurnStatus startedAt={runningTurnStartedAt} /> : null}
               ListEmptyComponent={
                 history.isPending ? (
                   <Text style={s.empty}>正在加载会话消息…</Text>
@@ -420,7 +424,7 @@ function MessageRow({
   api,
   sessionId,
 }: {
-  item: SharedMessagePresentation
+  item: NativeConversationRow
   event: Record<string, unknown> | undefined
   api: MobileApi | undefined
   sessionId: string | undefined
@@ -440,10 +444,13 @@ function MessageRow({
         <MessageActions alignment="user" text={item.text} />
       </View>
     )
+  if (item.kind === 'reasoning') return <NativeReasoningRow row={item} />
+  if (item.kind === 'retry') return <NativeRetryRow row={item} />
+  if (item.kind === 'turn-error') return <NativeTurnErrorRow row={item} />
   if (item.kind === 'tool')
     return (
       <View style={s.toolRow}>
-        <NativeToolCard presentation={item} />
+        <NativeToolCard row={item} />
       </View>
     )
   return (
