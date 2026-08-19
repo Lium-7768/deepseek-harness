@@ -25,6 +25,19 @@ export interface MobileQueuePayload {
   items: MobileQueueItem[]
 }
 
+/** One versioned event forwarded by the authenticated Mobile Gateway SSE stream. */
+export interface MobileStreamEvent {
+  contractVersion: 1
+  eventId: string
+  type: string
+  payload: Record<string, unknown>
+  sessionId?: string
+  seq?: number
+  snapshot?: true
+}
+
+export type MobileSyncStatus = 'connected' | 'connecting' | 'disconnected'
+
 export interface SessionSummary {
   sessionId: string
   title?: string

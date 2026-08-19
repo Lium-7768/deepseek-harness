@@ -50,7 +50,6 @@ export default function SessionScreen(): React.JSX.Element {
   const listRef = useRef<FlatList<SharedMessagePresentation>>(null)
   const submittedDraft = useRef<string | undefined>(undefined)
   const hasScrolledToLatest = useRef(false)
-  const [since, setSince] = useState(0)
   const [liveItems, setLiveItems] = useState<SharedEventItem[]>([])
   const [olderItems, setOlderItems] = useState<SharedEventItem[]>([])
   const [olderHasMore, setOlderHasMore] = useState<boolean | undefined>()
@@ -66,13 +65,12 @@ export default function SessionScreen(): React.JSX.Element {
     },
   })
   const events = useQuery({
-    queryKey: ['session-events', sessionId, since],
+    queryKey: ['session-events', sessionId],
     enabled: ready,
     queryFn: () => {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
-      return client.sessionEvents(sessionId, since)
+      return client.sessionEvents(sessionId, 0)
     },
-    refetchInterval: 2500,
   })
   const queue = useQuery({
     queryKey: ['session-queue', sessionId],
@@ -81,7 +79,6 @@ export default function SessionScreen(): React.JSX.Element {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
       return client.sessionQueue(sessionId)
     },
-    refetchInterval: 2500,
   })
   const interactions = useQuery({
     queryKey: ['session-interactions', sessionId],
@@ -90,7 +87,6 @@ export default function SessionScreen(): React.JSX.Element {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
       return client.pendingInteractions(sessionId)
     },
-    refetchInterval: 2500,
   })
   const sessionList = useQuery({
     queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId],
@@ -161,19 +157,10 @@ export default function SessionScreen(): React.JSX.Element {
   useEffect(() => {
     submittedDraft.current = undefined
     hasScrolledToLatest.current = false
-    setSince(0)
     setLiveItems([])
     setOlderItems([])
     setOlderHasMore(undefined)
   }, [sessionId])
-
-  useEffect(() => {
-    const historyMaxSeq = Math.max(
-      ...(history.data?.items ?? []).flatMap(item => (typeof item.seq === 'number' ? [item.seq] : [])),
-      0,
-    )
-    if (historyMaxSeq > 0) setSince(current => Math.max(current, historyMaxSeq))
-  }, [history.data])
 
   useEffect(() => {
     const value = firstParam(draft)
@@ -186,8 +173,6 @@ export default function SessionScreen(): React.JSX.Element {
     const incoming = events.data?.items ?? []
     if (!incoming.length) return
     setLiveItems(current => mergeEventItems(current, incoming))
-    const nextCursor = Math.max(...incoming.flatMap(item => (typeof item.seq === 'number' ? [item.seq] : [])))
-    if (Number.isFinite(nextCursor)) setSince(current => Math.max(current, nextCursor))
   }, [events.data])
 
   const sourceItems = useMemo(

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Drawer } from 'expo-router/drawer'
 import { useWindowDimensions } from 'react-native'
 import { useState } from 'react'
+import { MobileSyncBridge } from '@/components/mobile-sync-bridge'
 import { SessionDrawer } from '@/components/session-drawer'
 import { drawerWidthForViewport } from '@/components/session-drawer-logic'
 import { mobileTheme } from '@/theme'
@@ -13,6 +14,7 @@ export default function RootLayout(): React.JSX.Element {
   const { width } = useWindowDimensions()
   return (
     <QueryClientProvider client={queryClient}>
+      <MobileSyncBridge />
       <Drawer
         drawerContent={props => <SessionDrawer {...props} />}
         screenOptions={{

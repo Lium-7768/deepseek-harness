@@ -40,6 +40,16 @@ type DshSessionList = { items?: DshSessionSummary[]; [key: string]: unknown }
 type DshWorkspace = { workspaceId: string; title?: string; path?: string; sessionIds?: string[] }
 type DshWorkspaceList = { items?: DshWorkspace[]; archivedSessionIds?: string[] }
 type MobileHistoryItem = { seq?: number; event: Record<string, unknown> }
+type MobileStreamEvent = {
+  contractVersion: 1
+  eventId: string
+  type: string
+  payload: Record<string, unknown>
+  rpcId?: string
+  sessionId?: string
+  seq?: number
+  snapshot?: true
+}
 
 const MOBILE_WRITABLE_SETTINGS = new Set(['ui-theme', 'locale', 'ui-conversation', 'agent-presets', 'permission'])
 
@@ -52,6 +62,12 @@ export class MobileGateway {
   #server: Server | undefined
   #status: MobileGatewayStatus | undefined
   #muxAbort: AbortController | undefined
+  #muxRetry: ReturnType<typeof setTimeout> | undefined
+  #hostAbort: AbortController | undefined
+  #hostRetry: ReturnType<typeof setTimeout> | undefined
+  #nextEventId = 0
+  #eventHeartbeat: ReturnType<typeof setInterval> | undefined
+  readonly #eventClients = new Set<ServerResponse>()
   readonly #pending = new Map<string, PendingInteraction>()
   // `session/queue` is an authoritative transient mux snapshot. It is never
   // reconstructed from durable history or written back by the mobile client.
@@ -101,6 +117,15 @@ export class MobileGateway {
     this.#status = undefined
     this.#muxAbort?.abort()
     this.#muxAbort = undefined
+    if (this.#muxRetry !== undefined) clearTimeout(this.#muxRetry)
+    this.#muxRetry = undefined
+    this.#hostAbort?.abort()
+    this.#hostAbort = undefined
+    if (this.#hostRetry !== undefined) clearTimeout(this.#hostRetry)
+    this.#hostRetry = undefined
+    for (const client of this.#eventClients) client.end()
+    this.#eventClients.clear()
+    this.#stopEventHeartbeat()
     this.#pending.clear()
     this.#queues.clear()
     if (server === undefined) return
@@ -134,11 +159,17 @@ export class MobileGateway {
       writeError(response, { code: 'unauthorized', message: '需要已配对的移动设备凭据。' })
       return
     }
+    const url = new URL(request.url ?? '/', 'http://mobile-gateway.local')
+    if (request.method === 'GET' && url.pathname === '/v1/events') {
+      this.#startMux()
+      this.#startHost()
+      this.#openEventStream(response)
+      return
+    }
     if (request.method !== 'POST' || request.headers['content-type'] !== 'application/json') {
       writeError(response, { code: 'bad-request', message: '移动端 API 请求必须使用 JSON POST。' })
       return
     }
-    const url = new URL(request.url ?? '/', 'http://mobile-gateway.local')
     const body = await readJson(request)
     const pending = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/interactions$/)
     if (pending !== null) {
@@ -431,14 +462,115 @@ export class MobileGateway {
     void this.#captureMux(controller)
   }
 
+  #startHost(): void {
+    if (this.#hostAbort !== undefined || this.#status === undefined) return
+    const controller = new AbortController()
+    this.#hostAbort = controller
+    void this.#captureHost(controller)
+  }
+
   async #captureMux(controller: AbortController): Promise<void> {
     try {
-      for await (const envelope of this.#dsh.mux(controller.signal)) this.#rememberInteraction(envelope)
+      for await (const envelope of this.#dsh.mux(controller.signal)) {
+        this.#rememberInteraction(envelope)
+        this.#broadcast('mux', envelope)
+      }
     } catch (error) {
       if (!controller.signal.aborted) console.error('[mobile-gateway] DSH mux subscription ended:', error)
     } finally {
-      if (this.#muxAbort === controller) this.#muxAbort = undefined
+      if (this.#muxAbort === controller) {
+        this.#muxAbort = undefined
+        this.#scheduleStreamRestart('mux', controller.signal.aborted)
+      }
     }
+  }
+
+  async #captureHost(controller: AbortController): Promise<void> {
+    try {
+      for await (const envelope of this.#dsh.host(controller.signal)) this.#broadcast('host', envelope)
+    } catch (error) {
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH host subscription ended:', error)
+    } finally {
+      if (this.#hostAbort === controller) {
+        this.#hostAbort = undefined
+        this.#scheduleStreamRestart('host', controller.signal.aborted)
+      }
+    }
+  }
+
+  #scheduleStreamRestart(stream: 'host' | 'mux', aborted: boolean): void {
+    if (aborted || this.#status === undefined) return
+    if (stream === 'mux') {
+      if (this.#muxRetry !== undefined) return
+      const retry = setTimeout(() => {
+        this.#muxRetry = undefined
+        this.#startMux()
+      }, 1_000)
+      retry.unref()
+      this.#muxRetry = retry
+      return
+    }
+    if (this.#hostRetry !== undefined || this.#eventClients.size === 0) return
+    const retry = setTimeout(() => {
+      this.#hostRetry = undefined
+      this.#startHost()
+    }, 1_000)
+    retry.unref()
+    this.#hostRetry = retry
+  }
+
+  #openEventStream(response: ServerResponse): void {
+    response.writeHead(200, {
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'content-type': 'text/event-stream; charset=utf-8',
+      'x-accel-buffering': 'no',
+    })
+    this.#eventClients.add(response)
+    this.#startEventHeartbeat()
+    this.#writeStreamEvent(response, {
+      contractVersion: 1,
+      eventId: this.#nextStreamEventId(),
+      type: 'gateway/ready',
+      payload: {},
+      snapshot: true,
+    })
+    response.once('close', () => {
+      this.#eventClients.delete(response)
+      if (this.#eventClients.size === 0) this.#stopEventHeartbeat()
+    })
+  }
+
+  #broadcast(
+    source: 'host' | 'mux',
+    envelope: { rpcId: string; payload: Record<string, unknown> },
+  ): void {
+    const event = toMobileStreamEvent(source, envelope, this.#nextStreamEventId())
+    for (const client of this.#eventClients) this.#writeStreamEvent(client, event)
+  }
+
+  #nextStreamEventId(): string {
+    this.#nextEventId += 1
+    return this.#nextEventId.toString()
+  }
+
+  #startEventHeartbeat(): void {
+    if (this.#eventHeartbeat !== undefined) return
+    const heartbeat = setInterval(() => {
+      for (const client of this.#eventClients) client.write(': heartbeat\\n\\n')
+    }, 2_500)
+    heartbeat.unref()
+    this.#eventHeartbeat = heartbeat
+  }
+
+  #stopEventHeartbeat(): void {
+    if (this.#eventHeartbeat === undefined) return
+    clearInterval(this.#eventHeartbeat)
+    this.#eventHeartbeat = undefined
+  }
+
+  #writeStreamEvent(response: ServerResponse, event: MobileStreamEvent): void {
+    response.write(`id: ${event.eventId}\nevent: message\ndata: ${JSON.stringify(event)}\n\n`)
   }
 
   #rememberInteraction(envelope: { rpcId: string; payload: Record<string, unknown> }): void {
@@ -503,6 +635,33 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
     return parsed as Record<string, unknown>
   } catch {
     throw new GatewayHttpError('bad-request', '请求体必须是 JSON 对象。')
+  }
+}
+
+function toMobileStreamEvent(
+  source: 'host' | 'mux',
+  envelope: { rpcId: string; payload: Record<string, unknown> },
+  eventId: string,
+): MobileStreamEvent {
+  const { payload } = envelope
+  const type = typeof payload.type === 'string' ? payload.type : `${source}/unknown`
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
+  const event = payload.event
+  const eventSeq =
+    event !== null && typeof event === 'object' && !Array.isArray(event)
+      ? (event as Record<string, unknown>).seq
+      : undefined
+  const durableSeq = typeof eventSeq === 'number' ? eventSeq : typeof payload.seq === 'number' ? payload.seq : undefined
+  const snapshot = type === 'session/subscribed' || type === 'session/queue' || type === 'session/jobs'
+  return {
+    contractVersion: 1,
+    eventId,
+    type,
+    payload,
+    ...(source === 'mux' ? { rpcId: envelope.rpcId } : {}),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(durableSeq === undefined ? {} : { seq: durableSeq }),
+    ...(snapshot ? { snapshot: true } : {}),
   }
 }
 

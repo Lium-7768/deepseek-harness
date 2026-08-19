@@ -71,15 +71,28 @@ export class DshLoopbackClient {
   }
 
   /** Streams validated DSH mux server requests over the host's SSE downlink. */
-  async *mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
+  mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
+    return this.#stream('/api/events.mux', 'mux', signal)
+  }
+
+  /** Streams validated DSH host server requests over the host's SSE downlink. */
+  host(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
+    return this.#stream('/api/events.host', 'host', signal)
+  }
+
+  async *#stream(
+    path: '/api/events.host' | '/api/events.mux',
+    name: 'host' | 'mux',
+    signal: AbortSignal,
+  ): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    const response = await fetch(new URL('/api/events.mux', this.#baseUrl), {
+    const response = await fetch(new URL(path, this.#baseUrl), {
       method: 'GET',
       headers: { accept: 'text/event-stream', host: this.#baseUrl.host },
       signal,
     })
     if (!response.ok || response.body === null)
-      throw new DshLoopbackError('upstream-unavailable', `DSH SSE mux connection failed (HTTP ${response.status}).`)
+      throw new DshLoopbackError('upstream-unavailable', `DSH SSE ${name} connection failed (HTTP ${response.status}).`)
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''

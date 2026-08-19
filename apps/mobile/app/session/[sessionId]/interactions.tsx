@@ -68,7 +68,6 @@ export default function InteractionsScreen(): React.JSX.Element {
     queryKey: ['session-interactions', sessionId],
     enabled: client !== undefined && typeof sessionId === 'string' && sessionId.length > 0,
     queryFn: () => requireClient(client).pendingInteractions(requireSessionId(sessionId)),
-    refetchInterval: 2500,
   })
   const respond = useMutation({
     mutationFn: ({ rpcId, result }: { rpcId: string; result: unknown }) =>

@@ -449,3 +449,107 @@ test('paired devices read the authoritative DSH queue snapshot from the mux stre
   }, 'Gateway did not clear a stale queue snapshot at the next subscription boundary.')
   assert.deepEqual(cleared.data, { items: [] })
 })
+
+
+test('paired devices receive authenticated versioned mux and host SSE events', async t => {
+  let muxResponse
+  let hostResponse
+  const dsh = createServer((request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    if (request.url === '/api/events.host') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      hostResponse = response
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    hostResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('SSE test phone')
+  const authorization = `Bearer ${credential.deviceId}.${credential.accessToken}`
+  const unauthorized = await fetch(`${status.url}/v1/events`)
+  assert.equal(unauthorized.status, 401)
+
+  const stream = await fetch(`${status.url}/v1/events`, { headers: { authorization } })
+  assert.equal(stream.status, 200)
+  assert.equal(stream.headers.get('content-type'), 'text/event-stream; charset=utf-8')
+  const reader = stream.body?.getReader()
+  assert.ok(reader)
+  const mux = await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream for mobile SSE.')
+  const host = await eventually(() => hostResponse, 'Gateway did not subscribe to the DSH host stream for mobile SSE.')
+  mux.write(
+    `data: ${JSON.stringify({
+      type: 'server-request',
+      rpcId: 'mux-rpc-1',
+      payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 12, type: 'assistant/message' } },
+    })}\n\n`,
+  )
+  host.write(
+    `data: ${JSON.stringify({
+      type: 'server-request',
+      rpcId: 'host-rpc-1',
+      payload: { type: 'host/session-status', sessionId: 'session-1', running: true },
+    })}\n\n`,
+  )
+  const events = await readSseEvents(reader, 3)
+  assert.deepEqual(events[0], { contractVersion: 1, eventId: '1', type: 'gateway/ready', payload: {}, snapshot: true })
+  assert.deepEqual(events[1], {
+    contractVersion: 1,
+    eventId: '2',
+    type: 'session/event',
+    payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 12, type: 'assistant/message' } },
+    rpcId: 'mux-rpc-1',
+    sessionId: 'session-1',
+    seq: 12,
+  })
+  assert.deepEqual(events[2], {
+    contractVersion: 1,
+    eventId: '3',
+    type: 'host/session-status',
+    payload: { type: 'host/session-status', sessionId: 'session-1', running: true },
+    sessionId: 'session-1',
+  })
+  const heartbeat = await readSseChunk(reader)
+  assert.match(heartbeat, /: heartbeat/)
+  await reader.cancel()
+})
+
+async function readSseChunk(reader) {
+  const { done, value } = await reader.read()
+  assert.equal(done, false)
+  return new TextDecoder().decode(value)
+}
+
+async function readSseEvents(reader, count) {
+  const decoder = new TextDecoder()
+  const events = []
+  let buffer = ''
+  while (events.length < count) {
+    const { done, value } = await reader.read()
+    assert.equal(done, false)
+    buffer += decoder.decode(value, { stream: true })
+    let boundary
+    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+      const chunk = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      const data = chunk
+        .split('\n')
+        .filter(line => line.startsWith('data: '))
+        .map(line => line.slice(6))
+        .join('')
+      if (data !== '') events.push(JSON.parse(data))
+    }
+  }
+  return events
+}

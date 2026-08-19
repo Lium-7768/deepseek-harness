@@ -28,12 +28,10 @@ export default function SessionPermissionScreen(): React.JSX.Element {
     queryFn: () => requireClient(client).sessionHistory(sessionId ?? ''),
   })
   const events = useQuery({
-    queryKey: ['session-events', sessionId, 0],
+    queryKey: ['session-events', sessionId],
     enabled: client !== undefined && sessionId !== undefined,
     queryFn: () => requireClient(client).sessionEvents(sessionId ?? '', 0),
-    refetchInterval: 2500,
-    refetchOnWindowFocus: true,
-    staleTime: 2000,
+    staleTime: Infinity,
   })
   const permissions = readPermissionSelect(history.data?.projections?.values.permissions)
   const locked = permissionOptionsLocked({
