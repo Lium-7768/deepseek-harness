@@ -58,9 +58,16 @@ export default function ConnectScreen(): React.JSX.Element {
           <View style={styles.hero}>
             <Text style={styles.eyebrow}>DEEPSEEK HARNESS</Text>
             <Text style={styles.title}>连接桌面端</Text>
-            <Text style={styles.copy}>输入移动网关地址，以及桌面端批准的设备凭据。</Text>
+            <Text style={styles.copy}>扫描桌面端生成的一次性配对二维码即可安全连接。</Text>
           </View>
           <View style={styles.form}>
+            <NativeActionButton
+              label="扫描配对二维码"
+              icon="link"
+              onPress={() => router.push('/connect/scan')}
+              style={styles.connectButton}
+            />
+            <Text style={styles.manualLabel}>无法扫码时，可手动输入桌面端批准的连接信息。</Text>
             <Field
               label="移动网关地址"
               value={gatewayUrl}
@@ -136,6 +143,7 @@ const styles = StyleSheet.create({
   title: { color: mobileTheme.colors.ink, fontSize: 28, fontWeight: '800' },
   copy: { color: mobileTheme.colors.inkMuted, fontSize: mobileTheme.typography.bodyLarge, lineHeight: 23 },
   form: { gap: mobileTheme.spacing.md },
+  manualLabel: { color: mobileTheme.colors.inkMuted, fontSize: mobileTheme.typography.caption, lineHeight: 18 },
   field: { gap: mobileTheme.spacing.xs },
   label: { color: mobileTheme.colors.inkMuted, fontSize: mobileTheme.typography.caption, fontWeight: '700' },
   input: {

@@ -553,3 +553,60 @@ async function readSseEvents(reader, count) {
   }
   return events
 }
+
+
+test('one-time pairing secrets create exactly one durable paired-device credential', async t => {
+  let muxResponse
+  const dsh = createServer((request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const offer = gateway.createPairing('Scanned iPhone')
+  const redeemed = await fetch(`${status.url}/v1/pairing/redeem`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pairingId: offer.pairingId, pairingSecret: offer.pairingSecret }),
+  })
+  assert.equal(redeemed.status, 200)
+  const credential = (await redeemed.json()).data
+  assert.equal(typeof credential.deviceId, 'string')
+  assert.equal(typeof credential.accessToken, 'string')
+  assert.deepEqual(gateway.pairedDevices(), [
+    { deviceId: credential.deviceId, label: 'Scanned iPhone', createdAt: gateway.pairedDevices()[0].createdAt },
+  ])
+
+  const repeated = await fetch(`${status.url}/v1/pairing/redeem`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pairingId: offer.pairingId, pairingSecret: offer.pairingSecret }),
+  })
+  assert.equal(repeated.status, 404)
+  assert.deepEqual((await repeated.json()).error, {
+    code: 'pairing-not-found',
+    message: '配对码无效或已被使用，请重新扫描桌面端二维码。',
+  })
+
+  const rejectedOffer = gateway.createPairing('Wrong secret phone')
+  const rejected = await fetch(`${status.url}/v1/pairing/redeem`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pairingId: rejectedOffer.pairingId, pairingSecret: 'incorrect-secret' }),
+  })
+  assert.equal(rejected.status, 401)
+  assert.deepEqual((await rejected.json()).error, {
+    code: 'unauthorized',
+    message: '配对码无效，请重新扫描桌面端二维码。',
+  })
+})

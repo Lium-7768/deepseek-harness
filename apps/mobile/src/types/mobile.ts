@@ -4,6 +4,21 @@ export interface MobileConnection {
   accessToken: string
 }
 
+/** A short-lived desktop-issued QR payload that can be exchanged only once for a paired-device credential. */
+export interface MobilePairingQrPayload {
+  version: 1
+  gatewayUrl: string
+  pairingId: string
+  pairingSecret: string
+  expiresAt: string
+}
+
+/** The durable credential returned only after a pairing QR payload is redeemed. */
+export interface MobilePairingCredential {
+  deviceId: string
+  accessToken: string
+}
+
 /** Image MIME types accepted by the desktop session.prompt API. */
 export type MobileImageMediaType = 'image/gif' | 'image/jpeg' | 'image/png' | 'image/webp'
 

@@ -14,10 +14,12 @@
     "dist": "pnpm run prepare-runtime && pnpm run build && electron-builder --mac dmg"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-mobile-gateway": "workspace:^"
+    "@deepseek-ai/dsh-mobile-gateway": "workspace:^",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
@@ -31,8 +33,14 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": ".runtime/package.json", "to": "dsh-runtime/package.json" },
-      { "from": ".runtime/modules", "to": "dsh-runtime/node_modules" }
+      {
+        "from": ".runtime/package.json",
+        "to": "dsh-runtime/package.json"
+      },
+      {
+        "from": ".runtime/modules",
+        "to": "dsh-runtime/node_modules"
+      }
     ],
     "mac": {
       "target": [

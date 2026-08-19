@@ -4,6 +4,8 @@ import type {
   MobileConnection,
   MobileGatewayFault,
   MobileModelCatalogPayload,
+  MobilePairingCredential,
+  MobilePairingQrPayload,
   MobilePromptContent,
   MobileQueuePayload,
   MobileSettingsMutatePayload,
@@ -25,6 +27,7 @@ interface GatewayEnvelope<T> {
 export type MobileApiErrorKind =
   | 'network'
   | 'credentials'
+  | 'pairing-invalid'
   | 'session-not-found'
   | 'desktop-unavailable'
   | 'model-unavailable'
@@ -74,6 +77,50 @@ export function mobileErrorMessage(error: unknown, fallback = '移动端请求�
   if (error instanceof MobileApiError) return error.userMessage
   if (error instanceof Error && containsChinese(error.message)) return error.message
   return fallback
+}
+
+/** Exchanges a desktop-issued short-lived QR payload for one durable mobile device credential. */
+export async function redeemMobilePairing(payload: MobilePairingQrPayload): Promise<MobileConnection> {
+  let gatewayUrl: string
+  try {
+    const parsed = new URL(payload.gatewayUrl)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('unsupported protocol')
+    gatewayUrl = parsed.toString().replace(/\/$/, '')
+  } catch (error) {
+    throw createError('protocol', '二维码中的桌面网关地址无效。', { rawMessage: rawMessage(error) }, false)
+  }
+  const expiresAt = Date.parse(payload.expiresAt)
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now())
+    throw createError('pairing-invalid', '该配对二维码已过期，请在桌面端重新生成。', {}, false)
+  let response: Response
+  try {
+    response = await fetch(`${gatewayUrl}/v1/pairing/redeem`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairingId: payload.pairingId, pairingSecret: payload.pairingSecret }),
+    })
+  } catch (error) {
+    throw createError('network', '无法连接桌面端，请确认二维码对应的网络地址可访问。', { rawMessage: rawMessage(error) })
+  }
+  let decoded: unknown
+  try {
+    decoded = await response.json()
+  } catch (error) {
+    throw createError('protocol', '桌面端返回了无效的配对响应。', { status: response.status, rawMessage: rawMessage(error) })
+  }
+  if (!response.ok) {
+    const fault = readGatewayFault(decoded)
+    const code = fault?.code
+    const kind = errorKind(code, response.status)
+    throw createError(kind, userMessage(kind, code, response.status, fault?.message), {
+      code,
+      status: response.status,
+      rawMessage: fault?.message,
+    })
+  }
+  if (!isGatewayEnvelope<MobilePairingCredential>(decoded) || !isPairingCredential(decoded.data))
+    throw createError('protocol', '桌面端返回了无效的配对响应。', { status: response.status })
+  return { gatewayUrl, deviceId: decoded.data.deviceId, accessToken: decoded.data.accessToken }
 }
 
 /** Calls only the versioned Mobile Gateway API with a paired-device credential. */
@@ -288,6 +335,10 @@ export class MobileApi {
   }
 }
 
+function isPairingCredential(value: unknown): value is MobilePairingCredential {
+  return isRecord(value) && typeof value.deviceId === 'string' && value.deviceId !== '' && typeof value.accessToken === 'string' && value.accessToken !== ''
+}
+
 function isGatewayEnvelope<T>(value: unknown): value is GatewayEnvelope<T> {
   if (!isRecord(value) || value.contractVersion !== 1) return false
   return 'data' in value
@@ -310,6 +361,7 @@ function errorKind(code: string | undefined, status: number): MobileApiErrorKind
     status === 403
   )
     return 'credentials'
+  if (normalized === 'pairing-not-found') return 'pairing-invalid'
   if (normalized === 'session-not-found' || normalized === 'not-found') return 'session-not-found'
   if (normalized === 'model-unavailable') return 'model-unavailable'
   if (normalized === 'agent-preset-locked') return 'agent-preset-locked'
@@ -338,6 +390,7 @@ function userMessage(
 ): string {
   if (raw !== undefined && containsChinese(raw)) return raw
   if (kind === 'credentials') return '移动端凭据无效，请重新连接桌面端。'
+  if (kind === 'pairing-invalid') return '该配对二维码无效、已使用或已过期，请在桌面端重新生成。'
   if (kind === 'session-not-found') return '未找到请求的会话或操作。'
   if (kind === 'model-unavailable') return '所选模型当前不可用，请重新选择。'
   if (kind === 'agent-preset-locked') return '会话已经开始，无法切换 Agent 模式。'

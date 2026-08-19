@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, MenuItem, nativeImage, Tray } from 'electron'
 import { dirname, join } from 'node:path'
+import QRCode from 'qrcode'
 import { fileURLToPath } from 'node:url'
 import { MobileDeviceRegistry, MobileGateway, type MobileGatewayStatus } from '@deepseek-ai/dsh-mobile-gateway'
 import {
@@ -68,6 +69,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('dsh-desktop:mobile-gateway', () => requireMobileGatewayStatus())
   ipcMain.handle('dsh-desktop:restart-runtime', () => restartRuntime())
   ipcMain.handle('dsh-desktop:pair-device', async (_event, label: unknown) => pairDevice(label))
+  ipcMain.handle('dsh-desktop:create-pairing', async (_event, label: unknown) => createPairing(label))
   ipcMain.handle('dsh-desktop:paired-devices', () => requireMobileGateway().pairedDevices())
   ipcMain.handle('dsh-desktop:revoke-device', async (_event, deviceId: unknown) => revokeDevice(deviceId))
 }
@@ -77,6 +79,19 @@ async function restartRuntime(): Promise<void> {
   await ownedRuntime.stop()
   const running = await ownedRuntime.start()
   loadRuntimePage(running)
+}
+
+async function createPairing(label: unknown): Promise<{ qrDataUrl: string; expiresAt: string }> {
+  if (typeof label !== 'string') throw new Error('A paired device label is required.')
+  const offer = requireMobileGateway().createPairing(label)
+  const pairingPayload = JSON.stringify({
+    version: 1,
+    gatewayUrl: mobileGatewayPublicUrl(),
+    pairingId: offer.pairingId,
+    pairingSecret: offer.pairingSecret,
+    expiresAt: offer.expiresAt,
+  })
+  return { qrDataUrl: await QRCode.toDataURL(pairingPayload, { errorCorrectionLevel: 'M', margin: 1, width: 280 }), expiresAt: offer.expiresAt }
 }
 
 async function pairDevice(label: unknown): Promise<{ gatewayUrl: string; deviceId: string; accessToken: string }> {
@@ -279,5 +294,5 @@ function runtimeFailurePage(_message: string): string {
 }
 
 function controlPage(): string {
-  return '<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,sans-serif;margin:32px;line-height:1.45}input,button{font:inherit;padding:8px}input{width:100%;box-sizing:border-box;margin:8px 0}button{cursor:pointer}pre{white-space:pre-wrap;background:#f4f4f5;padding:12px;border-radius:8px}li{margin:10px 0;display:flex;gap:8px;align-items:center}li span{flex:1}</style></head><body><h1>Mobile devices</h1><p id="runtime">Checking runtime…</p><form id="pair"><label>Device name<input id="label" required maxlength="120" value="My phone"></label><button>Generate one-time credential</button></form><pre id="credential" hidden></pre><h2>Paired devices</h2><ul id="devices"></ul><script>const api=window.dshDesktop;const runtime=document.getElementById("runtime");const credential=document.getElementById("credential");const devices=document.getElementById("devices");async function refresh(){const status=await api.runtimeStatus();runtime.textContent="DSH status: "+status.state;const records=await api.pairedDevices();devices.replaceChildren(...records.map(device=>{const item=document.createElement("li");const text=document.createElement("span");text.textContent=device.label+" — paired "+device.createdAt+(device.revokedAt?" — revoked":"");const revoke=document.createElement("button");revoke.textContent=device.revokedAt?"Revoked":"Revoke";revoke.disabled=Boolean(device.revokedAt);revoke.addEventListener("click",async()=>{await api.revokeDevice(device.deviceId);await refresh()});item.append(text,revoke);return item}))}document.getElementById("pair").addEventListener("submit",async event=>{event.preventDefault();const label=document.getElementById("label").value;const result=await api.pairDevice(label);credential.hidden=false;credential.textContent="Gateway URL: "+result.gatewayUrl+"\\nDevice ID: "+result.deviceId+"\\nAccess token: "+result.accessToken+"\\n\\nStore this credential in the mobile app now. The desktop only retains a hash.";await refresh()});api.onRuntimeStatus(status=>{runtime.textContent="DSH status: "+status.state});void refresh()</script></body></html>'
+  return '<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,sans-serif;margin:32px;line-height:1.45;color:#171717}input,button{font:inherit;padding:8px}input{width:100%;box-sizing:border-box;margin:8px 0}button{cursor:pointer}#pairing{align-items:center;background:#f4f4f5;border-radius:12px;display:flex;flex-direction:column;gap:10px;margin-top:16px;padding:18px;text-align:center}#qr{background:#fff;border-radius:8px;display:block;height:280px;width:280px}#pairing p{margin:0;max-width:360px}li{margin:10px 0;display:flex;gap:8px;align-items:center}li span{flex:1}.muted{color:#666}</style></head><body><h1>Mobile devices</h1><p id="runtime">Checking runtime…</p><form id="pair"><label>Device name<input id="label" required maxlength="120" value="My phone"></label><button>Show pairing QR code</button></form><section id="pairing" hidden><img id="qr" alt="Scan this QR code in DeepSeek Harness mobile"><strong>Scan this code in the mobile app</strong><p id="expiry" class="muted"></p><p class="muted">The code is valid for five minutes and can be used only once. The desktop does not display or retain the long-lived mobile access token.</p></section><h2>Paired devices</h2><ul id="devices"></ul><script>const api=window.dshDesktop;const runtime=document.getElementById("runtime");const pairing=document.getElementById("pairing");const qr=document.getElementById("qr");const expiry=document.getElementById("expiry");const devices=document.getElementById("devices");async function refresh(){const status=await api.runtimeStatus();runtime.textContent="DSH status: "+status.state;const records=await api.pairedDevices();devices.replaceChildren(...records.map(device=>{const item=document.createElement("li");const text=document.createElement("span");text.textContent=device.label+" — paired "+device.createdAt+(device.revokedAt?" — revoked":"");const revoke=document.createElement("button");revoke.textContent=device.revokedAt?"Revoked":"Revoke";revoke.disabled=Boolean(device.revokedAt);revoke.addEventListener("click",async()=>{await api.revokeDevice(device.deviceId);await refresh()});item.append(text,revoke);return item}))}document.getElementById("pair").addEventListener("submit",async event=>{event.preventDefault();const label=document.getElementById("label").value;const result=await api.createPairing(label);qr.src=result.qrDataUrl;expiry.textContent="Expires at "+new Date(result.expiresAt).toLocaleTimeString();pairing.hidden=false});api.onRuntimeStatus(status=>{runtime.textContent="DSH status: "+status.state});void refresh()</script></body></html>'
 }

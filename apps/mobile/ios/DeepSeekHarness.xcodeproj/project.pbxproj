@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0B90CFECD12FE48B0B4CE267 /* libPods-DeepSeekHarness.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 69D4257BAFB7E919A063EF02 /* libPods-DeepSeekHarness.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		9D2C5311C42B7C54D9A4A6DA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 22EF959BA29FF907F804742A /* PrivacyInfo.xcprivacy */; };
-		A8A15C0C244EC1503DED1244 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D11A70E6841FFC5E50145B2 /* ExpoModulesProvider.swift */; };
+		60868AA33D332CF4973DBDDC /* libPods-DeepSeekHarness.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */; };
+		AE71C3E6F0C31958B359B6A1 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		E428C4CF21B1098E7C4DEF3C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -20,14 +20,14 @@
 		13B07F961A680F5B00A75B9A /* DeepSeekHarness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepSeekHarness.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = DeepSeekHarness/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = DeepSeekHarness/Info.plist; sourceTree = "<group>"; };
-		1D11A70E6841FFC5E50145B2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-DeepSeekHarness/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		22EF959BA29FF907F804742A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = DeepSeekHarness/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		69D4257BAFB7E919A063EF02 /* libPods-DeepSeekHarness.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DeepSeekHarness.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = DeepSeekHarness/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DeepSeekHarness.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.release.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.release.xcconfig"; sourceTree = "<group>"; };
+		8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-DeepSeekHarness/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = DeepSeekHarness/SplashScreen.storyboard; sourceTree = "<group>"; };
-		AE54A484A85FBEFF7452AAE7 /* Pods-DeepSeekHarness.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.debug.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.debug.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		E3E63906AA2840236C5D26F2 /* Pods-DeepSeekHarness.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.release.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.debug.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.debug.xcconfig"; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = DeepSeekHarness/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* DeepSeekHarness-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "DeepSeekHarness-Bridging-Header.h"; path = "DeepSeekHarness/DeepSeekHarness-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -37,21 +37,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0B90CFECD12FE48B0B4CE267 /* libPods-DeepSeekHarness.a in Frameworks */,
+				60868AA33D332CF4973DBDDC /* libPods-DeepSeekHarness.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		13760ABCF49FD11000EF2066 /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				C4AD4227E8EF58DC14CBD00F /* DeepSeekHarness */,
-			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* DeepSeekHarness */ = {
 			isa = PBXGroup;
 			children = (
@@ -61,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				22EF959BA29FF907F804742A /* PrivacyInfo.xcprivacy */,
+				3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */,
 			);
 			name = DeepSeekHarness;
 			sourceTree = "<group>";
@@ -70,9 +62,27 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				69D4257BAFB7E919A063EF02 /* libPods-DeepSeekHarness.a */,
+				6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		3320BFFE472ED2FA899D2FEC /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				C95A9F3CFF393BEFAFEEC910 /* DeepSeekHarness */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		47A657EBB43396D081F9C777 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */,
+				75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -89,8 +99,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				C89E92277487BC61DD0EDEA4 /* Pods */,
-				13760ABCF49FD11000EF2066 /* ExpoModulesProviders */,
+				47A657EBB43396D081F9C777 /* Pods */,
+				3320BFFE472ED2FA899D2FEC /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -114,22 +124,12 @@
 			path = DeepSeekHarness/Supporting;
 			sourceTree = "<group>";
 		};
-		C4AD4227E8EF58DC14CBD00F /* DeepSeekHarness */ = {
+		C95A9F3CFF393BEFAFEEC910 /* DeepSeekHarness */ = {
 			isa = PBXGroup;
 			children = (
-				1D11A70E6841FFC5E50145B2 /* ExpoModulesProvider.swift */,
+				8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */,
 			);
 			name = DeepSeekHarness;
-			sourceTree = "<group>";
-		};
-		C89E92277487BC61DD0EDEA4 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				AE54A484A85FBEFF7452AAE7 /* Pods-DeepSeekHarness.debug.xcconfig */,
-				E3E63906AA2840236C5D26F2 /* Pods-DeepSeekHarness.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "DeepSeekHarness" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				DA34EB5A7D991D3721409F97 /* [Expo] Configure project */,
+				BC87AD2D3349881D3CB8CB42 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				79430C014EB7D735724198EC /* [CP] Embed Pods Frameworks */,
+				4727F2AAB96DDF8C7D3869BD /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				9D2C5311C42B7C54D9A4A6DA /* PrivacyInfo.xcprivacy in Resources */,
+				E428C4CF21B1098E7C4DEF3C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,13 +242,16 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		79430C014EB7D735724198EC /* [CP] Embed Pods Frameworks */ = {
+		4727F2AAB96DDF8C7D3869BD /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCamera/ExpoCamera.framework/ExpoCamera",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCameraBarcodeScanning/ExpoCameraBarcodeScanning.framework/ExpoCameraBarcodeScanning",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoCameraBarcodeScanning/ZXingObjC.framework/ZXingObjC",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
@@ -260,6 +263,9 @@
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoCamera.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoCameraBarcodeScanning.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ZXingObjC.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFileSystem.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFont.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesCore.framework",
@@ -304,7 +310,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		DA34EB5A7D991D3721409F97 /* [Expo] Configure project */ = {
+		BC87AD2D3349881D3CB8CB42 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -336,7 +342,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				A8A15C0C244EC1503DED1244 /* ExpoModulesProvider.swift in Sources */,
+				AE71C3E6F0C31958B359B6A1 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,7 +351,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = AE54A484A85FBEFF7452AAE7 /* Pods-DeepSeekHarness.debug.xcconfig */;
+			baseConfigurationReference = F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -371,10 +377,10 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.deepseek.harness;
-PRODUCT_NAME = DeepSeekHarness;
-					RCT_METRO_PORT = 8090;
-					SWIFT_OBJC_BRIDGING_HEADER = "DeepSeekHarness/DeepSeekHarness-Bridging-Header.h";
-					SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				PRODUCT_NAME = DeepSeekHarness;
+RCT_METRO_PORT = 8090;
+				SWIFT_OBJC_BRIDGING_HEADER = "DeepSeekHarness/DeepSeekHarness-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
@@ -383,7 +389,7 @@ PRODUCT_NAME = DeepSeekHarness;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E3E63906AA2840236C5D26F2 /* Pods-DeepSeekHarness.release.xcconfig */;
+			baseConfigurationReference = 75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

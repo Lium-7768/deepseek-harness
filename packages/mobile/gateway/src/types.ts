@@ -32,6 +32,7 @@ export type MobileGatewayErrorCode =
   | 'agent-preset-invalid'
   | 'settings-rejected'
   | 'settings-conflict'
+  | 'pairing-not-found'
   | 'upstream-unavailable'
   | 'upstream-rejected'
 

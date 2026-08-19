@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MobileApi, MobileApiError, mobileErrorMessage } from '../src/api/mobile-api.ts'
+import { MobileApi, MobileApiError, mobileErrorMessage, redeemMobilePairing } from '../src/api/mobile-api.ts'
 
 const connection = { gatewayUrl: 'http://127.0.0.1:52404', deviceId: 'device-1', accessToken: 'token-1' }
 
@@ -71,6 +71,69 @@ describe('MobileApi error presentation', () => {
       '连接失败，请稍后重试。',
     )
     expect(mobileErrorMessage(new Error('桌面端当前不可用。'), '连接失败，请稍后重试。')).toBe('桌面端当前不可用。')
+  })
+})
+
+describe('Mobile QR pairing redemption', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('exchanges a valid desktop QR payload without requiring an existing device credential', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ contractVersion: 1, data: { deviceId: 'phone-1', accessToken: 'token-1' } }, 200))
+
+    await expect(
+      redeemMobilePairing({
+        version: 1,
+        gatewayUrl: 'https://desktop.example.test/mobile/',
+        pairingId: 'pairing-1',
+        pairingSecret: 'secret-1',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    ).resolves.toEqual({ gatewayUrl: 'https://desktop.example.test/mobile', deviceId: 'phone-1', accessToken: 'token-1' })
+
+    expect(fetchMock).toHaveBeenCalledWith('https://desktop.example.test/mobile/v1/pairing/redeem', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairingId: 'pairing-1', pairingSecret: 'secret-1' }),
+    })
+  })
+
+  it('rejects expired and already-used desktop pairing codes with recoverable Chinese messages', async () => {
+    const expired = await requestError(() =>
+      redeemMobilePairing({
+        version: 1,
+        gatewayUrl: 'https://desktop.example.test',
+        pairingId: 'pairing-1',
+        pairingSecret: 'secret-1',
+        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+      }),
+    )
+    expect(expired).toMatchObject({ kind: 'pairing-invalid', userMessage: '该配对二维码已过期，请在桌面端重新生成。' })
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: { code: 'pairing-not-found', message: 'Used' } }, 404))
+    const used = await requestError(() =>
+      redeemMobilePairing({
+        version: 1,
+        gatewayUrl: 'https://desktop.example.test',
+        pairingId: 'pairing-1',
+        pairingSecret: 'secret-1',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    )
+    expect(used).toMatchObject({
+      kind: 'pairing-invalid',
+      userMessage: '该配对二维码无效、已使用或已过期，请在桌面端重新生成。',
+      diagnostic: { code: 'pairing-not-found', status: 404, rawMessage: 'Used' },
+    })
   })
 })
 

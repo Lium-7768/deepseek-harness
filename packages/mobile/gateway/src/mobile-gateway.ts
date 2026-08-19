@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { DshLoopbackClient, DshLoopbackError } from './dsh-loopback-client.ts'
 import { MobileDeviceRegistry } from './device-registry.ts'
@@ -21,6 +22,13 @@ const MAX_PROMPT_IMAGES = 4
 const MAX_PROMPT_TEXT_CHARS = 100_000
 const MAX_IMAGE_BASE64_CHARS = 3 * 1024 * 1024
 const IMAGE_MEDIA_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp'])
+const PAIRING_TTL_MS = 5 * 60 * 1_000
+
+type PendingPairing = {
+  label: string
+  secretHash: Uint8Array
+  expiresAt: number
+}
 
 type PendingInteraction = {
   rpcId: string
@@ -68,6 +76,7 @@ export class MobileGateway {
   #nextEventId = 0
   #eventHeartbeat: ReturnType<typeof setInterval> | undefined
   readonly #eventClients = new Set<ServerResponse>()
+  readonly #pairings = new Map<string, PendingPairing>()
   readonly #pending = new Map<string, PendingInteraction>()
   // `session/queue` is an authoritative transient mux snapshot. It is never
   // reconstructed from durable history or written back by the mobile client.
@@ -126,6 +135,7 @@ export class MobileGateway {
     for (const client of this.#eventClients) client.end()
     this.#eventClients.clear()
     this.#stopEventHeartbeat()
+    this.#pairings.clear()
     this.#pending.clear()
     this.#queues.clear()
     if (server === undefined) return
@@ -137,6 +147,31 @@ export class MobileGateway {
   /** Creates a credential after a desktop pairing flow confirms the device label. */
   pairDevice(label: string): MobileDeviceCredential {
     return this.#devices.create(label)
+  }
+
+  /** Creates a short-lived, single-use secret that a mobile QR scan exchanges for a device credential. */
+  createPairing(label: string): { pairingId: string; pairingSecret: string; expiresAt: string } {
+    const normalizedLabel = label.trim()
+    if (normalizedLabel.length === 0 || normalizedLabel.length > 120)
+      throw new Error('A paired device label must contain between 1 and 120 characters.')
+    this.#prunePairings()
+    const pairingId = randomBytes(18).toString('base64url')
+    const pairingSecret = randomBytes(32).toString('base64url')
+    const expiresAt = Date.now() + PAIRING_TTL_MS
+    this.#pairings.set(pairingId, { label: normalizedLabel, secretHash: pairingSecretHash(pairingSecret), expiresAt })
+    return { pairingId, pairingSecret, expiresAt: new Date(expiresAt).toISOString() }
+  }
+
+  /** Exchanges one unexpired pairing secret for a durable paired-device credential. */
+  redeemPairing(pairingId: string, pairingSecret: string): MobileDeviceCredential {
+    this.#prunePairings()
+    const pairing = this.#pairings.get(pairingId)
+    if (pairing === undefined) throw new GatewayHttpError('pairing-not-found', '配对码无效或已被使用，请重新扫描桌面端二维码。')
+    const candidate = pairingSecretHash(pairingSecret)
+    if (candidate.byteLength !== pairing.secretHash.byteLength || !timingSafeEqual(candidate, pairing.secretHash))
+      throw new GatewayHttpError('unauthorized', '配对码无效，请重新扫描桌面端二维码。')
+    this.#pairings.delete(pairingId)
+    return this.#devices.create(pairing.label)
   }
 
   /** Lists paired devices for the desktop settings surface. */
@@ -154,12 +189,21 @@ export class MobileGateway {
       writeJson(response, 200, { contractVersion: 1, status: 'ok' })
       return
     }
+    const url = new URL(request.url ?? '/', 'http://mobile-gateway.local')
+    if (request.method === 'POST' && url.pathname === '/v1/pairing/redeem') {
+      if (request.headers['content-type'] !== 'application/json')
+        throw new GatewayHttpError('bad-request', '配对请求必须使用 JSON。')
+      const body = await readJson(request)
+      const pairingId = requireText(body.pairingId, '缺少配对标识。')
+      const pairingSecret = requireText(body.pairingSecret, '缺少配对密钥。')
+      writeJson(response, 200, await this.#response(this.redeemPairing(pairingId, pairingSecret)))
+      return
+    }
     const device = this.#devices.authenticate(request.headers.authorization)
     if (device === undefined) {
       writeError(response, { code: 'unauthorized', message: '需要已配对的移动设备凭据。' })
       return
     }
-    const url = new URL(request.url ?? '/', 'http://mobile-gateway.local')
     if (request.method === 'GET' && url.pathname === '/v1/events') {
       this.#startMux()
       this.#startHost()
@@ -573,6 +617,13 @@ export class MobileGateway {
     response.write(`id: ${event.eventId}\nevent: message\ndata: ${JSON.stringify(event)}\n\n`)
   }
 
+  #prunePairings(): void {
+    const now = Date.now()
+    for (const [pairingId, pairing] of this.#pairings) {
+      if (pairing.expiresAt <= now) this.#pairings.delete(pairingId)
+    }
+  }
+
   #rememberInteraction(envelope: { rpcId: string; payload: Record<string, unknown> }): void {
     const { payload } = envelope
     const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
@@ -638,6 +689,10 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   }
 }
 
+function pairingSecretHash(value: string): Uint8Array {
+  return createHash('sha256').update(value).digest()
+}
+
 function toMobileStreamEvent(
   source: 'host' | 'mux',
   envelope: { rpcId: string; payload: Record<string, unknown> },
@@ -674,7 +729,7 @@ function writeError(response: ServerResponse, error: MobileGatewayError): void {
   const status =
     error.code === 'unauthorized'
       ? 401
-      : error.code === 'not-found' || error.code === 'session-not-found'
+      : error.code === 'not-found' || error.code === 'session-not-found' || error.code === 'pairing-not-found'
         ? 404
         : error.code === 'settings-conflict'
           ? 409

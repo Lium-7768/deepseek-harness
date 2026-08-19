@@ -19,11 +19,17 @@ export interface DesktopPairingCredential {
   accessToken: string
 }
 
+export interface DesktopPairingQr {
+  qrDataUrl: string
+  expiresAt: string
+}
+
 contextBridge.exposeInMainWorld('dshDesktop', {
   runtimeStatus: (): Promise<DesktopRuntimeStatus> => ipcRenderer.invoke('dsh-desktop:runtime-status'),
   mobileGateway: (): Promise<DesktopMobileGatewayInfo> => ipcRenderer.invoke('dsh-desktop:mobile-gateway'),
   restartRuntime: (): Promise<void> => ipcRenderer.invoke('dsh-desktop:restart-runtime'),
   pairDevice: (label: string): Promise<DesktopPairingCredential> => ipcRenderer.invoke('dsh-desktop:pair-device', label),
+  createPairing: (label: string): Promise<DesktopPairingQr> => ipcRenderer.invoke('dsh-desktop:create-pairing', label),
   pairedDevices: (): Promise<readonly DesktopMobileDevice[]> => ipcRenderer.invoke('dsh-desktop:paired-devices'),
   revokeDevice: (deviceId: string): Promise<boolean> => ipcRenderer.invoke('dsh-desktop:revoke-device', deviceId),
   onRuntimeStatus: (listener: (status: DesktopRuntimeStatus) => void): (() => void) => {
