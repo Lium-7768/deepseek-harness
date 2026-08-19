@@ -1,0 +1,27 @@
+{
+	admin off
+}
+
+{$MOBILE_EDGE_HOST} {
+	tls /etc/dsh-mobile-edge/certs/origin.crt /etc/dsh-mobile-edge/certs/origin.key {
+		client_auth {
+			mode require_and_verify
+			trust_pool file {
+				pem_file /etc/dsh-mobile-edge/certs/cloudflare-aop-ca.pem
+			}
+		}
+	}
+
+	header {
+		-Server
+		Cache-Control "no-store"
+	}
+
+	reverse_proxy 127.0.0.1:{$MOBILE_EDGE_UPSTREAM_PORT:161297} {
+		flush_interval -1
+	}
+
+	log {
+		output file /var/log/dsh-mobile-edge/access.log
+	}
+}
