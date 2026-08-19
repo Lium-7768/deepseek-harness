@@ -93,8 +93,8 @@ describe('projectNativeConversationRows', () => {
         { seq: 4, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'text-delta', index: 1, text: '处理。' } } } },
       ]),
     ).toEqual([
-      { kind: 'reasoning', sourceSeq: 1, text: '分析中' },
-      { kind: 'assistant', sourceSeq: 3, text: '正在处理。' },
+      { kind: 'reasoning', rowKey: 'stream:3:2:reasoning:0', sourceSeq: 1, text: '分析中' },
+      { kind: 'assistant', rowKey: 'stream:3:2:assistant:1', sourceSeq: 3, text: '正在处理。' },
     ])
   })
 

@@ -10,15 +10,15 @@ Status: implemented
 
 ## Decision
 
-`projectNativeConversationRows()` 直接从移动 Gateway 已返回的桌面持久会话事件派生有序原生显示行。它保留 `user/message`、推流中的 `assistant/chunk` 推理与正文增量、已完成助手的 `reasoning` 与 `text` 块、关联的 `tool/call` 和 `tool/result` 生命周期记录、`llm/retry` 与 `turn/error`。流式增量按桌面回合、步骤、块序号和类别合并；最终助手消息替换同一步骤的临时行。该投影用关联结果更新工具调用行，并保留源序号以供附件和确定性的列表标识使用。
+`projectNativeConversationRows()` 直接从移动 Gateway 已返回的桌面持久会话事件派生有序原生显示行。它保留 `user/message`、推流中的 `assistant/chunk` 推理与正文增量、已完成助手的 `reasoning` 与 `text` 块、关联的 `tool/call` 和 `tool/result` 生命周期记录、`llm/retry` 与 `turn/error`。流式增量按桌面回合、步骤、块序号和类别合并；最终助手消息替换同一步骤的临时行。该投影用关联结果更新工具调用行，保留源序号供附件使用，并为每个实时块分配 `stream:<turn>:<step>:<kind>:<index>` 键，避免 React Native 在文本增长时重挂载该行。
 
-主原生会话以独立 React Native 组件渲染这些行类别。助手正文继续使用 `NativeMarkdown`；推理使用可展开的 `Think` 披露行；工具调用使用带状态点和可展开 IN/OUT 详情的紧凑 `Tool call · <name>` 行；模型重试显示与桌面等价的延迟和失败原因；回合错误保持为提示；打开的持久回合在列表尾部独立显示 `Deep diving...`。工具输入和输出使用限高嵌套阅读面，长围栏代码或 JSON 默认限制为 16 行并提供显式展开控件。读者离开最新消息后，列表停止跟随流式内容并显示仅图标的返回最新消息控件。列表键包含行类别和源位置，因为一个桌面助手事件可以同时生成推理行和正文行。
+主原生会话以独立 React Native 组件渲染这些行类别。助手正文继续使用紧凑的共享移动端 `NativeMarkdown` 正文字号；推理使用可展开的 `Think` 披露行；工具调用使用带状态点和可展开 IN/OUT 详情的紧凑 `Tool call · <name>` 行；模型重试显示与桌面等价的延迟和失败原因；回合错误保持为提示；打开的持久回合在对话下方独立的原生运行状态槽中显示 `Deep diving...`，避免被 `FlatList` 视口裁切。可见的 Think、活动目标和通用工具行分别使用桌面 `ic_ds_think_outline_14`、`ic_ds_goal_outline_16` 和 `sparkle_16` SVG 路径。工具输入和输出使用限高嵌套阅读面，长围栏代码或 JSON 默认限制为 16 行并提供显式展开控件。读者离开最新消息后，列表停止跟随流式内容并显示仅图标的返回最新消息控件。
 
 原生渲染器不复刻桌面 DOM、CSS、拖拽行为或检查面板。它将桌面持久信息及层级映射为满足触控尺寸的原生控件，同时保留系统文本选择、可访问性角色、安全区域布局和现有原生编辑器。
 
 ## Verification
 
-移动端严格 TypeScript 程序通过。原生对话投影测试覆盖有序的用户正文、Think、助手文本、关联的失败工具输出、重试元数据、回合错误、活动回合时间、推流中的推理/正文增量和最终消息替换。滚动策略测试覆盖跟随所有权和返回最新消息可见性。已配对的 iPhone 17 Pro 模拟器在运行中的桌面会话中显示真实的紧凑工具名、独立 Think 行、助手 Markdown、工具状态点和桌面最新步骤；未再出现重复 FlatList 键警告。
+移动端严格 TypeScript 程序通过。原生对话投影测试覆盖有序的用户正文、Think、助手文本、关联的失败工具输出、重试元数据、回合错误、活动回合时间、推流中的推理/正文增量、最终消息替换和稳定的流式行键。滚动策略测试覆盖跟随所有权和返回最新消息可见性。已配对的 iPhone 17 Pro 模拟器在运行中的桌面会话中显示真实的紧凑工具名、独立 Think 行、助手 Markdown、工具状态点和桌面最新步骤；未再出现重复 FlatList 键警告。
 
 ## Alternatives considered
 

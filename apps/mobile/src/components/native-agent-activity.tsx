@@ -58,7 +58,7 @@ export function NativeGoalBar({
     <View style={[styles.goal, goal.phase === 'blocked' && styles.goalBlocked]}>
       <View style={styles.goalHeader}>
         <View style={styles.goalTitle}>
-          <NativeIcon name="route" size={16} color={mobileTheme.colors.accentText} />
+          <NativeIcon name="goal" size={16} color={mobileTheme.colors.accentText} />
           <Text style={styles.goalStatus}>{status}</Text>
         </View>
         <View style={styles.goalActions}>

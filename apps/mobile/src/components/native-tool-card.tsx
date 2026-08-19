@@ -35,7 +35,7 @@ const META: Record<Variant, [NativeIconName, string]> = {
   edit: ['edit', '编辑'],
   code: ['code', '代码'],
   web: ['language', '网页'],
-  other: ['build', '工具'],
+  other: ['sparkle', '工具'],
 }
 
 /**

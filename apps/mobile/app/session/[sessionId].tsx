@@ -337,7 +337,7 @@ export default function SessionScreen(): React.JSX.Element {
                 style={s.listView}
                 ref={listRef}
                 data={messages}
-                keyExtractor={(item, index) => `message-${item.kind}-${item.sourceSeq ?? 'transient'}-${index}`}
+                keyExtractor={(item, index) => item.rowKey ?? `message-${item.kind}-${item.sourceSeq ?? 'transient'}-${index}`}
                 renderItem={({ item }) => (
                   <MessageRow
                     item={item}
@@ -365,7 +365,6 @@ export default function SessionScreen(): React.JSX.Element {
                     </Pressable>
                   ) : null
                 }
-                ListFooterComponent={status === 'running' ? <NativeTurnStatus startedAt={runningTurnStartedAt} /> : null}
                 ListEmptyComponent={
                   history.isPending ? (
                     <Text style={s.empty}>正在加载会话消息…</Text>
@@ -410,6 +409,11 @@ export default function SessionScreen(): React.JSX.Element {
                 </Pressable>
               ) : null}
             </View>
+            {tab === 'chat' && status === 'running' ? (
+              <View style={s.turnStatusSlot}>
+                <NativeTurnStatus startedAt={runningTurnStartedAt} />
+              </View>
+            ) : null}
             {tab === 'chat' ? (
               <LocalizedSessionStats items={sourceItems} projectionValues={history.data?.projections?.values} />
             ) : null}
@@ -686,6 +690,7 @@ const s = StyleSheet.create({
   },
   userText: { color: mobileTheme.colors.ink, fontSize: 16, lineHeight: 24 },
   toolRow: { maxWidth: '100%' },
+  turnStatusSlot: { paddingHorizontal: mobileTheme.spacing.lg, paddingVertical: mobileTheme.spacing.xs },
   stats: { paddingHorizontal: 14, paddingVertical: 4 },
   statsText: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 20, textAlign: 'center' },
   status: { alignItems: 'center', flexDirection: 'row', gap: 5 },

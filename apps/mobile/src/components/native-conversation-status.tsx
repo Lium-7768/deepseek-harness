@@ -26,7 +26,7 @@ export function NativeReasoningRow({ row }: { row: ReasoningRow }): React.JSX.El
         onPress={() => setExpanded(value => !value)}
         style={({ pressed }) => [s.disclosureHeader, pressed && s.pressed]}
       >
-        <NativeIcon name="smart-toy" size={15} color={mobileTheme.colors.inkMuted} />
+        <NativeIcon name="think" size={15} color={mobileTheme.colors.inkMuted} />
         <Text style={s.disclosureTitle}>Think</Text>
         <Text style={s.separator}>·</Text>
         <Text numberOfLines={1} style={s.disclosureSummary}>

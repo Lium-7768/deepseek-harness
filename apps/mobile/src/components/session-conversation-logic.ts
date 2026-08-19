@@ -4,18 +4,21 @@ export type NativeConversationRow =
   | {
     kind: 'user' | 'assistant'
     text: string
+    rowKey?: string
     sourceSeq?: number
     time?: number
   }
   | {
     kind: 'reasoning'
     text: string
+    rowKey?: string
     sourceSeq?: number
   }
   | {
     callId?: string
     kind: 'tool'
     output?: string
+    rowKey?: string
     sourceSeq?: number
     state: 'completed' | 'failed' | 'running'
     summary?: string
@@ -28,12 +31,14 @@ export type NativeConversationRow =
     kind: 'retry'
     maxRetries: number
     retry: number
+    rowKey?: string
     sourceSeq?: number
   }
   | {
     code?: string
     kind: 'turn-error'
     message: string
+    rowKey?: string
     sourceSeq?: number
   }
 
@@ -90,7 +95,7 @@ export function projectNativeConversationRows(items: readonly SharedEventItem[])
             continue
           }
         }
-        rows.push({ kind, text, ...(sourceSeq === undefined ? {} : { sourceSeq }) })
+        rows.push({ kind, rowKey: `stream:${blockKey}`, text, ...(sourceSeq === undefined ? {} : { sourceSeq }) })
         streamingRowByBlock.set(blockKey, rows.length - 1)
       }
       continue

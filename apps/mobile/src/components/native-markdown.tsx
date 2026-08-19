@@ -224,7 +224,7 @@ function NativeCodeBlock({
           <NativeIcon
             name={copied ? 'check' : 'content-copy'}
             size={16}
-            color={copied ? '#86efac' : failed ? mobileTheme.colors.danger : '#bfdbfe'}
+            color={copied ? mobileTheme.colors.codeSuccess : failed ? mobileTheme.colors.danger : mobileTheme.colors.codeInteractive}
           />
         </Pressable>
       </View>
@@ -239,7 +239,7 @@ function NativeCodeBlock({
           style={styles.codeToggle}
         >
           <Text style={styles.codeToggleText}>{expanded ? '收起' : `展开全部 ${lineCount} 行`}</Text>
-          <NativeIcon name={expanded ? 'expand-less' : 'expand-more'} size={15} color="#bfdbfe" />
+          <NativeIcon name={expanded ? 'expand-less' : 'expand-more'} size={15} color={mobileTheme.colors.codeInteractive} />
         </Pressable>
       ) : null}
     </View>
@@ -247,8 +247,8 @@ function NativeCodeBlock({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: mobileTheme.spacing.lg },
-  body: { color: mobileTheme.colors.ink, fontSize: 16, lineHeight: 28 },
+  root: { gap: mobileTheme.spacing.md },
+  body: { color: mobileTheme.colors.ink, fontSize: mobileTheme.typography.body, lineHeight: mobileTheme.typography.lineBody },
   heading: { color: mobileTheme.colors.ink, fontWeight: '800' },
   h1: { fontSize: 22, lineHeight: 28 },
   h2: { fontSize: 18, lineHeight: 24 },
@@ -264,12 +264,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   quote: { borderLeftColor: mobileTheme.colors.accent, borderLeftWidth: 3, paddingLeft: 10 },
-  quoteText: { color: mobileTheme.colors.inkMuted, fontStyle: 'italic', lineHeight: 28 },
+  quoteText: { color: mobileTheme.colors.inkMuted, fontStyle: 'italic', lineHeight: mobileTheme.typography.lineBody },
   listRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
-  marker: { color: mobileTheme.colors.accent, fontWeight: '800', lineHeight: 28, minWidth: 18 },
+  marker: { color: mobileTheme.colors.accent, fontWeight: '800', lineHeight: mobileTheme.typography.lineBody, minWidth: 18 },
   codeCard: { backgroundColor: mobileTheme.colors.codeBackground, borderRadius: 10, gap: 8, padding: 11 },
   codeHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  codeLanguage: { color: '#93c5fd', fontSize: 10, fontWeight: '800' },
+  codeLanguage: { color: mobileTheme.colors.codeLabel, fontSize: 10, fontWeight: '800' },
   copyButton: {
     alignItems: 'center',
     height: mobileTheme.touch.iconButton,
@@ -278,5 +278,5 @@ const styles = StyleSheet.create({
   },
   codeText: { color: mobileTheme.colors.codeForeground, fontFamily: 'Menlo', fontSize: 13, lineHeight: 22 },
   codeToggle: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: mobileTheme.touch.minTarget },
-  codeToggleText: { color: '#bfdbfe', fontSize: 12, fontWeight: '700' },
+  codeToggleText: { color: mobileTheme.colors.codeInteractive, fontSize: 12, fontWeight: '700' },
 })
