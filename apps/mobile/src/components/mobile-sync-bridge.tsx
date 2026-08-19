@@ -162,10 +162,15 @@ function applyMobileStreamEvent(queryClient: ReturnType<typeof useQueryClient>, 
     case 'session/event':
       if (sessionId === undefined || event.payload.event === undefined) return
       appendSessionEvent(queryClient, sessionId, event)
+      if (isGoalEvent(event.payload.event)) void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
       return
     case 'session/queue':
       if (sessionId === undefined || !Array.isArray(event.payload.items)) return
       queryClient.setQueryData(['session-queue', sessionId], { items: event.payload.items })
+      return
+    case 'session/jobs':
+      if (sessionId === undefined || !Array.isArray(event.payload.jobs)) return
+      queryClient.setQueryData(['session-jobs', sessionId], { items: event.payload.jobs })
       return
     case 'approval/requested':
     case 'approval/resolved':
@@ -189,6 +194,8 @@ function applyMobileStreamEvent(queryClient: ReturnType<typeof useQueryClient>, 
       void queryClient.invalidateQueries({ queryKey: ['session-events'] })
       void queryClient.invalidateQueries({ queryKey: ['session-interactions'] })
       void queryClient.invalidateQueries({ queryKey: ['session-queue'] })
+      void queryClient.invalidateQueries({ queryKey: ['session-jobs'] })
+      void queryClient.invalidateQueries({ queryKey: ['session-subagents'] })
       void queryClient.invalidateQueries({ predicate: query => isSessionListQuery(query.queryKey) })
       return
     case 'session/subscribed':
@@ -196,6 +203,14 @@ function applyMobileStreamEvent(queryClient: ReturnType<typeof useQueryClient>, 
     default:
       if (sessionId !== undefined) void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
   }
+}
+
+function isGoalEvent(value: unknown): boolean {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as Record<string, unknown>).type === 'string'
+    && ((value as Record<string, unknown>).type as string).startsWith('goal/')
 }
 
 function appendSessionEvent(queryClient: ReturnType<typeof useQueryClient>, sessionId: string, streamEvent: MobileStreamEvent): void {

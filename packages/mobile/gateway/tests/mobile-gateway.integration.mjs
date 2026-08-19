@@ -610,3 +610,213 @@ test('one-time pairing secrets create exactly one durable paired-device credenti
     message: '配对码无效，请重新扫描桌面端二维码。',
   })
 })
+
+test('paired devices project jobs and delegate only goal and subagent controls', async t => {
+  let muxResponse
+  const calls = []
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    calls.push({ url: request.url, payload: message.payload })
+    const values = {
+      '/api/subagent.list': {
+        entries: [{ kind: 'child', id: 'child-1', mode: 'continuable', activity: 'running', hasChildren: false, label: 'Research' }],
+        parentAvailable: true,
+      },
+      '/api/subagent.history': {
+        events: [{ event: { type: 'assistant/message', seq: 4, content: 'Child result' } }],
+        hasMore: false,
+      },
+      '/api/subagent.prompt': { messageId: 'message-1' },
+      '/api/subagent.interrupt': { accepted: true },
+      '/api/goal.pause': { ref: { id: 'goal-1', revision: 2 } },
+    }
+    const value = values[request.url]
+    if (value === undefined) {
+      response.writeHead(404).end()
+      return
+    }
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Agent controls test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+
+  const stream = await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream.')
+  stream.write(
+    `data: ${JSON.stringify({
+      type: 'server-request',
+      rpcId: 'jobs-rpc-1',
+      method: 'events.mux',
+      payload: {
+        type: 'session/jobs',
+        sessionId: 'parent-1',
+        jobs: [{ id: 'job-1', kind: 'workflow', label: 'Research sources', status: 'running', startedAt: 1 }],
+      },
+    })}\n\n`,
+  )
+
+  const jobs = await eventually(async () => {
+    const response = await fetch(`${status.url}/v1/sessions/parent-1/jobs`, { method: 'POST', headers, body: '{}' })
+    const payload = await response.json()
+    return payload.data?.items?.length === 1 ? payload : undefined
+  }, 'Gateway did not retain the DSH jobs snapshot.')
+  assert.deepEqual(jobs.data.items, [{ id: 'job-1', kind: 'workflow', label: 'Research sources', status: 'running', startedAt: 1 }])
+
+  const subagents = await fetch(`${status.url}/v1/sessions/parent-1/subagents`, { method: 'POST', headers, body: '{}' })
+  assert.equal(subagents.status, 200)
+  assert.deepEqual((await subagents.json()).data, {
+    entries: [{ kind: 'child', id: 'child-1', mode: 'continuable', activity: 'running', hasChildren: false, label: 'Research' }],
+    parentAvailable: true,
+  })
+
+  const history = await fetch(`${status.url}/v1/sessions/parent-1/subagents/child-1/history`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ mode: 'continuable' }),
+  })
+  assert.equal(history.status, 200)
+  assert.deepEqual((await history.json()).data.items, [{ seq: 4, event: { type: 'assistant/message', seq: 4, content: 'Child result' } }])
+
+  const invalidGoal = await fetch(`${status.url}/v1/sessions/parent-1/goal/pause`, { method: 'POST', headers, body: '{}' })
+  assert.equal(invalidGoal.status, 400)
+  assert.deepEqual((await invalidGoal.json()).error, { code: 'bad-request', message: '目标版本信息无效。' })
+
+  const goal = await fetch(`${status.url}/v1/sessions/parent-1/goal/pause`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ref: { id: 'goal-1', revision: 1 } }),
+  })
+  assert.equal(goal.status, 200)
+  assert.deepEqual((await goal.json()).data, { ref: { id: 'goal-1', revision: 2 } })
+
+  const prompt = await fetch(`${status.url}/v1/sessions/parent-1/subagents/child-1/messages`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ mode: 'continuable', content: [{ type: 'text', text: 'Continue the fixture.' }] }),
+  })
+  assert.equal(prompt.status, 200)
+  assert.deepEqual((await prompt.json()).data, { messageId: 'message-1' })
+
+  const invalidInterrupt = await fetch(`${status.url}/v1/sessions/parent-1/subagents/child-1/interrupt`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ mode: 'one-shot' }),
+  })
+  assert.equal(invalidInterrupt.status, 400)
+  assert.deepEqual((await invalidInterrupt.json()).error, { code: 'bad-request', message: '只有可继续的子 Agent 可以停止。' })
+
+  const interrupt = await fetch(`${status.url}/v1/sessions/parent-1/subagents/child-1/interrupt`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ mode: 'continuable' }),
+  })
+  assert.equal(interrupt.status, 200)
+  assert.deepEqual((await interrupt.json()).data, { accepted: true })
+  assert.deepEqual(calls, [
+    { url: '/api/subagent.list', payload: { parentSessionId: 'parent-1' } },
+    { url: '/api/subagent.history', payload: { parentSessionId: 'parent-1', childSessionId: 'child-1', mode: 'continuable' } },
+    { url: '/api/goal.pause', payload: { sessionId: 'parent-1', ref: { id: 'goal-1', revision: 1 } } },
+    {
+      url: '/api/subagent.prompt',
+      payload: {
+        parentSessionId: 'parent-1',
+        childSessionId: 'child-1',
+        mode: 'continuable',
+        content: [{ type: 'text', text: 'Continue the fixture.' }],
+      },
+    },
+    { url: '/api/subagent.interrupt', payload: { parentSessionId: 'parent-1', childSessionId: 'child-1', mode: 'continuable' } },
+  ])
+})
+
+
+test('paired devices may discuss only a structurally valid plan review request', async t => {
+  let muxResponse
+  let responseEnvelope
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    if (request.url !== '/api/respond') {
+      response.writeHead(404).end()
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    responseEnvelope = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ accepted: true }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Plan review test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const stream = await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream.')
+  stream.write(
+    `data: ${JSON.stringify({
+      type: 'server-request',
+      rpcId: 'plan-review-rpc-1',
+      method: 'events.mux',
+      payload: {
+        type: 'question/requested',
+        sessionId: 'session-1',
+        questions: [{
+          id: 'review-1',
+          question: 'Approve the implementation plan?',
+          detail: '# Implementation plan',
+          intent: { kind: 'plan-review', approve: 'Approve' },
+          options: [{ label: 'Approve' }, { label: 'Decline' }],
+        }],
+      },
+    })}\n\n`,
+  )
+  await eventually(async () => {
+    const response = await fetch(`${status.url}/v1/sessions/session-1/interactions`, { method: 'POST', headers, body: '{}' })
+    const payload = await response.json()
+    return payload.data?.items?.length === 1 ? payload : undefined
+  }, 'Gateway did not retain the plan review request.')
+
+  const discuss = await fetch(`${status.url}/v1/interactions/respond`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      rpcId: 'plan-review-rpc-1',
+      result: { ok: false, error: { code: 'cancelled', message: 'the user opened plan discussion', details: {} } },
+    }),
+  })
+  assert.equal(discuss.status, 200)
+  assert.deepEqual(responseEnvelope, {
+    type: 'client-response',
+    rpcId: 'plan-review-rpc-1',
+    result: { ok: false, error: { code: 'cancelled', message: 'the user opened plan discussion', details: {} } },
+  })
+})

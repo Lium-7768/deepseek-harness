@@ -98,6 +98,52 @@ export interface MobileSessionProjectionsBlock {
   values: Record<string, unknown>
 }
 
+/** Goal state is desktop-authoritative and arrives only through the session projection. */
+export interface MobileGoalView {
+  id: string
+  revision: number
+  objective: string
+  phase: 'active' | 'paused' | 'blocked' | 'complete'
+  blockedReason?: { message?: string }
+}
+
+/** One read-only host-owned background-job snapshot row. */
+export interface MobileJobView {
+  id: string
+  kind: string
+  label: string
+  status: string
+  detail?: string
+  startedAt: number
+  finishedAt?: number
+}
+
+export interface MobileJobsPayload {
+  items: MobileJobView[]
+}
+
+/** Desktop-owned direct child session that belongs to one parent session. */
+export type MobileSubagentEntry =
+  | {
+    kind: 'child'
+    id: string
+    mode: 'one-shot' | 'continuable'
+    activity: 'running' | 'inactive'
+    hasChildren: boolean
+    label?: string
+  }
+  | { kind: 'diagnostic'; id: string; reason: 'corrupt' | 'unsupported' | 'unavailable' }
+
+export interface MobileSubagentCatalogPayload {
+  entries: MobileSubagentEntry[]
+  parentAvailable: boolean
+}
+
+export interface MobileGoalRef {
+  id: string
+  revision: number
+}
+
 /** Host-owned permission choices projected from the session log. */
 export interface MobilePermissionSelect {
   options: Array<{ value: string; name: string; description?: string }>
@@ -133,6 +179,7 @@ export interface DshQuestion {
   header?: string
   options?: DshQuestionOption[]
   multiSelect?: boolean
+  intent?: { kind?: string; approve?: string }
 }
 
 export interface PendingApprovalInteraction {

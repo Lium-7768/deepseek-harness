@@ -18,6 +18,7 @@ import { NativeActionButton } from '@/components/native-action-button'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeMarkdown } from '@/components/native-markdown'
 import { NativeQueueDock } from '@/components/native-queue-dock'
+import { NativeAgentActivity, NativeGoalBar, goalFromProjection } from '@/components/native-agent-activity'
 import { NativeToolCard } from '@/components/native-tool-card'
 import { NativeIcon } from '@/components/native-icon'
 import { WorkspaceComposer } from '@/components/workspace-composer'
@@ -78,6 +79,22 @@ export default function SessionScreen(): React.JSX.Element {
     queryFn: () => {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
       return client.sessionQueue(sessionId)
+    },
+  })
+  const jobs = useQuery({
+    queryKey: ['session-jobs', sessionId],
+    enabled: ready,
+    queryFn: () => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.sessionJobs(sessionId)
+    },
+  })
+  const subagents = useQuery({
+    queryKey: ['session-subagents', sessionId],
+    enabled: ready,
+    queryFn: () => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.subagents(sessionId)
     },
   })
   const interactions = useQuery({
@@ -149,6 +166,22 @@ export default function SessionScreen(): React.JSX.Element {
     },
     onError: error => Alert.alert('停止任务失败', withErrorContext('任务未停止，请稍后重试', error)),
   })
+  const goalMutation = useMutation({
+    mutationFn: ({ action, ref, objective }: { action: 'edit' | 'pause' | 'resume' | 'clear'; ref: { id: string; revision: number }; objective?: string }) => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.mutateGoal(sessionId, action, ref, objective === undefined ? {} : { objective })
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] }),
+    onError: error => Alert.alert('更新目标失败', withErrorContext('目标未更新，请稍后重试', error)),
+  })
+  const interruptSubagent = useMutation({
+    mutationFn: (childSessionId: string) => {
+      if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
+      return client.interruptSubagent(sessionId, childSessionId)
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['session-subagents', sessionId] }),
+    onError: error => Alert.alert('停止子 Agent 失败', withErrorContext('停止请求未发送，请稍后重试', error)),
+  })
   const sendMessage = useRef(send.mutate)
   sendMessage.current = send.mutate
 
@@ -182,6 +215,7 @@ export default function SessionScreen(): React.JSX.Element {
   const messages = useMemo(() => projectVisibleMessages(sourceItems), [sourceItems])
   const hasMoreHistory = olderHasMore ?? history.data?.hasMore ?? false
   const actions = interactions.data?.items.length ?? 0
+  const goal = goalFromProjection(history.data?.projections?.values)
   const status = events.data?.status ?? '正在连接'
   const displayStatus = connection ? status : 'disconnected'
 
@@ -203,6 +237,23 @@ export default function SessionScreen(): React.JSX.Element {
         ) : (
           <>
             <WorkbenchTabs tab={tab} onChange={setTab} />
+            <NativeGoalBar
+              goal={goal}
+              pending={goalMutation.isPending}
+              onMutate={(action, ref, objective) => goalMutation.mutate({ action, ref, objective })}
+            />
+            <NativeAgentActivity
+              jobs={jobs.data?.items ?? []}
+              subagents={subagents.data?.entries ?? []}
+              interruptingId={interruptSubagent.isPending ? interruptSubagent.variables : undefined}
+              onOpenSubagent={entry =>
+                router.push({
+                  pathname: '/session/[sessionId]/subagent',
+                  params: { sessionId: entry.id, parentSessionId: sessionId, mode: entry.mode },
+                })
+              }
+              onInterruptSubagent={entry => interruptSubagent.mutate(entry.id)}
+            />
             {actions > 0 ? (
               <Pressable
                 accessibilityRole="button"

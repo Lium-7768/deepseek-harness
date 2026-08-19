@@ -217,3 +217,50 @@ async function requestError(request: () => Promise<unknown>): Promise<MobileApiE
 function jsonResponse(value: unknown, status: number): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 }
+
+
+describe('MobileApi agent observation and control requests', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ contractVersion: 1, data: {} }, 200)))
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('uses the constrained Gateway paths for jobs, subagents, and goal mutations', async () => {
+    const api = new MobileApi(connection)
+    await api.sessionJobs('parent/a')
+    await api.subagents('parent/a')
+    await api.subagentHistory('parent/a', 'child/a', 'continuable')
+    await api.sendSubagentMessage('parent/a', 'child/a', [{ type: 'text', text: 'Continue the task.' }])
+    await api.interruptSubagent('parent/a', 'child/a')
+    await api.mutateGoal('parent/a', 'pause', { id: 'goal-1', revision: 3 })
+    await api.mutateGoal('parent/a', 'edit', { id: 'goal-1', revision: 3 }, { objective: 'Complete the review.' })
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>
+    expect(
+      calls.map(([url, init]) => ({
+        url: new URL(url).pathname,
+        body: JSON.parse(String(init.body)),
+      })),
+    ).toEqual([
+      { url: '/v1/sessions/parent%2Fa/jobs', body: {} },
+      { url: '/v1/sessions/parent%2Fa/subagents', body: {} },
+      { url: '/v1/sessions/parent%2Fa/subagents/child%2Fa/history', body: { mode: 'continuable' } },
+      {
+        url: '/v1/sessions/parent%2Fa/subagents/child%2Fa/messages',
+        body: { mode: 'continuable', content: [{ type: 'text', text: 'Continue the task.' }] },
+      },
+      { url: '/v1/sessions/parent%2Fa/subagents/child%2Fa/interrupt', body: { mode: 'continuable' } },
+      { url: '/v1/sessions/parent%2Fa/goal/pause', body: { ref: { id: 'goal-1', revision: 3 } } },
+      {
+        url: '/v1/sessions/parent%2Fa/goal/edit',
+        body: { ref: { id: 'goal-1', revision: 3 }, objective: 'Complete the review.' },
+      },
+    ])
+  })
+})

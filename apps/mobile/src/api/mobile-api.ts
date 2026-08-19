@@ -1,6 +1,9 @@
 import type {
   MobileAgentPresetDetail,
   MobileAgentPresetListPayload,
+  MobileGoalRef,
+  MobileJobsPayload,
+  MobileSubagentCatalogPayload,
   MobileConnection,
   MobileGatewayFault,
   MobileModelCatalogPayload,
@@ -201,6 +204,53 @@ export class MobileApi {
   /** Reads the desktop mux-derived pending inbox snapshot for one session. */
   sessionQueue(sessionId: string): Promise<MobileQueuePayload> {
     return this.#post<MobileQueuePayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/queue`, {})
+  }
+
+  /** Reads the host-owned background-job snapshot for one desktop session. */
+  sessionJobs(sessionId: string): Promise<MobileJobsPayload> {
+    return this.#post<MobileJobsPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/jobs`, {})
+  }
+
+  /** Lists direct desktop-owned subagent sessions without activating either agent. */
+  subagents(sessionId: string): Promise<MobileSubagentCatalogPayload> {
+    return this.#post<MobileSubagentCatalogPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/subagents`, {})
+  }
+
+  /** Reads a direct child transcript through the desktop subagent authority. */
+  subagentHistory(
+    parentSessionId: string,
+    childSessionId: string,
+    mode: 'one-shot' | 'continuable',
+  ): Promise<SessionHistoryPayload> {
+    return this.#post<SessionHistoryPayload>(
+      `/v1/sessions/${encodeURIComponent(parentSessionId)}/subagents/${encodeURIComponent(childSessionId)}/history`,
+      { mode },
+    )
+  }
+
+  /** Queues native text and image content through the desktop's direct-parent subagent authority. */
+  sendSubagentMessage(parentSessionId: string, childSessionId: string, content: MobilePromptContent): Promise<{ messageId: string }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(parentSessionId)}/subagents/${encodeURIComponent(childSessionId)}/messages`, {
+      mode: 'continuable',
+      content,
+    })
+  }
+
+  /** Requests interruption of a continuable child turn; acceptance does not imply immediate quiescence. */
+  interruptSubagent(parentSessionId: string, childSessionId: string): Promise<{ accepted: true }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(parentSessionId)}/subagents/${encodeURIComponent(childSessionId)}/interrupt`, {
+      mode: 'continuable',
+    })
+  }
+
+  /** Applies one desktop Goal mutation using the projection's current CAS reference. */
+  mutateGoal(
+    sessionId: string,
+    action: 'edit' | 'pause' | 'resume' | 'clear',
+    ref: MobileGoalRef,
+    input: { objective?: string } = {},
+  ): Promise<{ ref?: MobileGoalRef; cleared?: true }> {
+    return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/goal/${action}`, { ref, ...input })
   }
 
   /** Updates one queued prompt using an existing DSH queue action. */

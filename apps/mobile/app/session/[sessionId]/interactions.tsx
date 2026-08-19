@@ -21,6 +21,7 @@ import { NativeActionButton } from '@/components/native-action-button'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
 import { NativeIcon } from '@/components/native-icon'
+import { NativeMarkdown } from '@/components/native-markdown'
 import {
   interactionListState,
   questionOptionAccessibility,
@@ -239,6 +240,9 @@ function ApprovalCard({ interaction, submitting, onRespond }: ApprovalCardProps)
 function QuestionCard({ interaction, submitting, onRespond }: QuestionCardProps): React.JSX.Element {
   const [draft, setDraft] = useState<AnswerDraft>({})
   const questions = interaction.payload.questions
+  const review = planReviewOf(questions)
+  if (review !== undefined)
+    return <PlanReviewCard interaction={interaction} review={review} submitting={submitting} onRespond={onRespond} />
   const complete = useMemo(
     () =>
       questions.every((question) => {
@@ -333,6 +337,84 @@ function QuestionCard({ interaction, submitting, onRespond }: QuestionCardProps)
         disabled={!complete}
         onPress={submit}
       />
+    </View>
+  )
+}
+
+type PlanReview = {
+  id: string
+  question: string
+  plan: string
+  approve: string
+  decline?: string
+}
+
+function planReviewOf(questions: DshQuestion[]): PlanReview | undefined {
+  if (questions.length !== 1) return undefined
+  const question = questions[0]
+  if (question === undefined || question.intent?.kind !== 'plan-review' || question.detail === undefined || question.multiSelect === true)
+    return undefined
+  const options = question.options ?? []
+  if (options.length > 2 || question.intent.approve === undefined) return undefined
+  const approve = options.find(option => option.label === question.intent?.approve)?.label
+  if (approve === undefined) return undefined
+  const decline = options.find(option => option.label !== approve)?.label
+  return { id: question.id, question: question.question, plan: question.detail, approve, ...(decline === undefined ? {} : { decline }) }
+}
+
+function PlanReviewCard({
+  interaction,
+  review,
+  submitting,
+  onRespond,
+}: {
+  interaction: PendingQuestionInteraction
+  review: PlanReview
+  submitting: boolean
+  onRespond: RespondHandler
+}): React.JSX.Element {
+  const answer = (selected: string) =>
+    onRespond(interaction.rpcId, {
+      ok: true,
+      value: { sessionId: interaction.sessionId, answer: { answers: [{ id: review.id, selected: [selected] }] } },
+    })
+  const discuss = () =>
+    onRespond(interaction.rpcId, {
+      ok: false,
+      error: { code: 'cancelled', message: 'the user opened plan discussion', details: {} },
+    })
+  return (
+    <View style={styles.card}>
+      <Text style={styles.kicker}>计划审阅</Text>
+      <Text style={styles.cardTitle}>{review.question}</Text>
+      <NativeMarkdown markdown={review.plan} />
+      <View style={styles.buttonRow}>
+        <NativeActionButton
+          label="讨论"
+          icon="chat"
+          variant="secondary"
+          disabled={submitting}
+          onPress={discuss}
+          style={styles.approvalButton}
+        />
+        {review.decline !== undefined ? (
+          <NativeActionButton
+            label={review.decline}
+            icon="close"
+            variant="danger"
+            disabled={submitting}
+            onPress={() => answer(review.decline as string)}
+            style={styles.approvalButton}
+          />
+        ) : null}
+        <NativeActionButton
+          label={review.approve}
+          icon="check"
+          disabled={submitting}
+          onPress={() => answer(review.approve)}
+          style={styles.approvalButton}
+        />
+      </View>
     </View>
   )
 }

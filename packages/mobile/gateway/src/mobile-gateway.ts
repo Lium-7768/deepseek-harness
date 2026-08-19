@@ -47,6 +47,7 @@ type DshSessionSummary = { sessionId: string; title?: string; [key: string]: unk
 type DshSessionList = { items?: DshSessionSummary[]; [key: string]: unknown }
 type DshWorkspace = { workspaceId: string; title?: string; path?: string; sessionIds?: string[] }
 type DshWorkspaceList = { items?: DshWorkspace[]; archivedSessionIds?: string[] }
+type DshSubagentHistory = DshHistory
 type MobileHistoryItem = { seq?: number; event: Record<string, unknown> }
 type MobileStreamEvent = {
   contractVersion: 1
@@ -81,6 +82,9 @@ export class MobileGateway {
   // `session/queue` is an authoritative transient mux snapshot. It is never
   // reconstructed from durable history or written back by the mobile client.
   readonly #queues = new Map<string, unknown[]>()
+  // `session/jobs` is an authoritative transient mux snapshot. It is exposed
+  // read-only and never reconstructed from the durable session log.
+  readonly #jobs = new Map<string, unknown[]>()
 
   /** @param options - Loopback DSH and local listener configuration. */
   constructor(options: MobileGatewayOptions) {
@@ -138,6 +142,7 @@ export class MobileGateway {
     this.#pairings.clear()
     this.#pending.clear()
     this.#queues.clear()
+    this.#jobs.clear()
     if (server === undefined) return
     await new Promise<void>((resolve, reject) =>
       server.close(error => (error === undefined ? resolve() : reject(error))),
@@ -320,6 +325,79 @@ export class MobileGateway {
       const sessionId = decodePathSegment(queueSnapshot)
       writeJson(response, 200, await this.#response({ items: this.#queues.get(sessionId) ?? [] }))
       return
+    }
+    const jobs = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/jobs$/)
+    if (jobs !== null) {
+      this.#startMux()
+      const sessionId = decodePathSegment(jobs)
+      writeJson(response, 200, await this.#response({ items: this.#jobs.get(sessionId) ?? [] }))
+      return
+    }
+    const subagentHistory = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents\/([^/]+)\/history$/)
+    if (subagentHistory !== null) {
+      const parentSessionId = decodePathSegment(subagentHistory)
+      const childSessionId = decodePathSegmentAt(subagentHistory, 2, '子 Agent 路径无效。')
+      const mode = requireSubagentMode(body.mode)
+      const beforeSeq = optionalNonnegativeInteger(body.beforeSeq, '历史游标必须是非负整数。')
+      const maxMessages = optionalPositiveInteger(body.maxMessages, '历史消息数量必须是正整数。')
+      const value = await this.#dsh.call<DshSubagentHistory>('subagent.history', {
+        parentSessionId,
+        childSessionId,
+        mode,
+        ...(beforeSeq === undefined ? {} : { beforeSeq }),
+        ...(maxMessages === undefined ? {} : { maxMessages }),
+      })
+      writeJson(response, 200, await this.#response({ ...value, items: toMobileHistoryItems(value) }))
+      return
+    }
+    const promptSubagent = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents\/([^/]+)\/messages$/)
+    if (promptSubagent !== null) {
+      const parentSessionId = decodePathSegment(promptSubagent)
+      const childSessionId = decodePathSegmentAt(promptSubagent, 2, '子 Agent 路径无效。')
+      if (requireSubagentMode(body.mode) !== 'continuable')
+        throw new GatewayHttpError('bad-request', '只有可继续的子 Agent 可以接收消息。')
+      const content = readPromptContent(body)
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('subagent.prompt', { parentSessionId, childSessionId, mode: 'continuable', content })),
+      )
+      return
+    }
+    const interruptSubagent = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents\/([^/]+)\/interrupt$/)
+    if (interruptSubagent !== null) {
+      const parentSessionId = decodePathSegment(interruptSubagent)
+      const childSessionId = decodePathSegmentAt(interruptSubagent, 2, '子 Agent 路径无效。')
+      if (requireSubagentMode(body.mode) !== 'continuable')
+        throw new GatewayHttpError('bad-request', '只有可继续的子 Agent 可以停止。')
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('subagent.interrupt', { parentSessionId, childSessionId, mode: 'continuable' })),
+      )
+      return
+    }
+    const subagents = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents$/)
+    if (subagents !== null) {
+      const parentSessionId = decodePathSegment(subagents)
+      writeJson(response, 200, await this.#response(await this.#dsh.call('subagent.list', { parentSessionId })))
+      return
+    }
+    const goal = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/goal\/(edit|pause|resume|clear)$/)
+    if (goal !== null) {
+      const sessionId = decodePathSegment(goal)
+      const action = goal[2]
+      const ref = requireGoalRef(body.ref)
+      if (action === 'edit') {
+        const objective = requireText(body.objective, '目标内容不能为空。')
+        writeJson(response, 200, await this.#response(await this.#dsh.call('goal.edit', { sessionId, ref, objective })))
+        return
+      }
+      if (action === 'pause' || action === 'resume' || action === 'clear') {
+        writeJson(response, 200, await this.#response(await this.#dsh.call(`goal.${action}`, { sessionId, ref })))
+        return
+      }
+      throw new GatewayHttpError('not-found', '未找到请求的移动端操作。')
     }
     const renameWorkspace = url.pathname.match(/^\/v1\/workspaces\/([^/]+)\/rename$/)
     if (renameWorkspace !== null) {
@@ -631,8 +709,11 @@ export class MobileGateway {
       // The host omits a queue baseline for an empty queue, so the subscribed
       // generation boundary must clear any stale cached snapshot first.
       this.#queues.delete(sessionId)
+      this.#jobs.delete(sessionId)
     } else if (payload.type === 'session/queue' && sessionId !== undefined && Array.isArray(payload.items)) {
       this.#queues.set(sessionId, payload.items)
+    } else if (payload.type === 'session/jobs' && sessionId !== undefined && Array.isArray(payload.jobs)) {
+      this.#jobs.set(sessionId, payload.jobs)
     } else if (payload.type === 'approval/requested' && sessionId !== undefined && typeof payload.approvalId === 'string') {
       this.#pending.set(envelope.rpcId, {
         rpcId: envelope.rpcId,
@@ -806,6 +887,10 @@ function optionalNonnegativeInteger(value: unknown, message: string): number | u
 }
 function optionalPositiveInteger(value: unknown, message: string): number | undefined {
   if (value === undefined) return undefined
+  return requirePositiveInteger(value, message)
+}
+
+function requirePositiveInteger(value: unknown, message: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) throw new GatewayHttpError('bad-request', message)
   return value
 }
@@ -825,14 +910,33 @@ function toMobileHistoryItems(history: DshHistory): MobileHistoryItem[] {
 }
 
 function decodePathSegment(match: RegExpMatchArray): string {
-  const segment = match[1]
-  if (segment === undefined) throw new GatewayHttpError('bad-request', '会话路径无效。')
+  return decodePathSegmentAt(match, 1, '会话路径无效。')
+}
+
+function decodePathSegmentAt(match: RegExpMatchArray, index: number, message: string): string {
+  const segment = match[index]
+  if (segment === undefined || segment === '') throw new GatewayHttpError('bad-request', message)
   return decodeURIComponent(segment)
+}
+
+function requireGoalRef(value: unknown): { id: string; revision: number } {
+  const ref = requireObject(value, '目标版本信息无效。')
+  return {
+    id: requireText(ref.id, '目标标识不能为空。'),
+    revision: requirePositiveInteger(ref.revision, '目标版本必须是正整数。'),
+  }
+}
+
+function requireSubagentMode(value: unknown): 'one-shot' | 'continuable' {
+  if (value === 'one-shot' || value === 'continuable') return value
+  throw new GatewayHttpError('bad-request', '子 Agent 模式无效。')
 }
 
 function isExpectedInteractionResponse(interaction: PendingInteraction, result: unknown): boolean {
   if (result === null || typeof result !== 'object' || Array.isArray(result)) return false
   const response = result as Record<string, unknown>
+  if (interaction.type === 'question/requested' && isPlanReviewRequest(interaction.payload.questions) && isPlanReviewCancellation(response))
+    return true
   if (
     response.ok !== true ||
     response.value === null ||
@@ -876,6 +980,27 @@ function isExpectedInteractionResponse(interaction: PendingInteraction, result: 
       )
     })
   )
+}
+
+function isPlanReviewRequest(questions: unknown): boolean {
+  if (!Array.isArray(questions) || questions.length !== 1) return false
+  const question = questions[0]
+  if (question === null || typeof question !== 'object' || Array.isArray(question)) return false
+  const value = question as Record<string, unknown>
+  if (value.detail === undefined || value.multiSelect === true) return false
+  const intent = value.intent
+  if (intent === null || typeof intent !== 'object' || Array.isArray(intent)) return false
+  const approve = (intent as Record<string, unknown>).approve
+  if ((intent as Record<string, unknown>).kind !== 'plan-review' || typeof approve !== 'string') return false
+  const options = value.options
+  if (!Array.isArray(options) || options.length > 2) return false
+  return options.some(option => option !== null && typeof option === 'object' && (option as Record<string, unknown>).label === approve)
+}
+
+function isPlanReviewCancellation(response: Record<string, unknown>): boolean {
+  if (response.ok !== false || response.error === null || typeof response.error !== 'object' || Array.isArray(response.error)) return false
+  const error = response.error as Record<string, unknown>
+  return error.code === 'cancelled' && typeof error.message === 'string' && error.details !== null && typeof error.details === 'object'
 }
 
 function inferSessionStatus(items: Array<{ event?: Record<string, unknown> }>): 'running' | 'waiting' | 'idle' {
