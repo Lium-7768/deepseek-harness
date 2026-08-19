@@ -8,11 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		1F73D47842CA9533EDE1504F /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F933BD526B742610ABA26B /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		60868AA33D332CF4973DBDDC /* libPods-DeepSeekHarness.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */; };
-		AE71C3E6F0C31958B359B6A1 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */; };
+		90A116E4E1A4E1FE96046212 /* libPods-DeepSeekHarness.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6FF1747546CE25A5E7B53961 /* libPods-DeepSeekHarness.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		E428C4CF21B1098E7C4DEF3C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */; };
+		E7E0E64BA47FB7BB1C113AA2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3536C5E9E628E1DD47A2150E /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -20,14 +20,14 @@
 		13B07F961A680F5B00A75B9A /* DeepSeekHarness.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepSeekHarness.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = DeepSeekHarness/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = DeepSeekHarness/Info.plist; sourceTree = "<group>"; };
-		3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = DeepSeekHarness/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DeepSeekHarness.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.release.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.release.xcconfig"; sourceTree = "<group>"; };
-		8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-DeepSeekHarness/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		3536C5E9E628E1DD47A2150E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = DeepSeekHarness/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		6FF1747546CE25A5E7B53961 /* libPods-DeepSeekHarness.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DeepSeekHarness.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A354D9C334948F87336EDDAF /* Pods-DeepSeekHarness.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.release.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.release.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = DeepSeekHarness/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C89F2EB8F8565EF7EC096D7F /* Pods-DeepSeekHarness.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.debug.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.debug.xcconfig"; sourceTree = "<group>"; };
+		E3F933BD526B742610ABA26B /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-DeepSeekHarness/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-DeepSeekHarness.debug.xcconfig"; path = "Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness.debug.xcconfig"; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = DeepSeekHarness/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* DeepSeekHarness-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "DeepSeekHarness-Bridging-Header.h"; path = "DeepSeekHarness/DeepSeekHarness-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -37,7 +37,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				60868AA33D332CF4973DBDDC /* libPods-DeepSeekHarness.a in Frameworks */,
+				90A116E4E1A4E1FE96046212 /* libPods-DeepSeekHarness.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				3DB1D1394554427EB4D11D48 /* PrivacyInfo.xcprivacy */,
+				3536C5E9E628E1DD47A2150E /* PrivacyInfo.xcprivacy */,
 			);
 			name = DeepSeekHarness;
 			sourceTree = "<group>";
@@ -62,27 +62,17 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				6D6A3B4592859DE27C35344E /* libPods-DeepSeekHarness.a */,
+				6FF1747546CE25A5E7B53961 /* libPods-DeepSeekHarness.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		3320BFFE472ED2FA899D2FEC /* ExpoModulesProviders */ = {
+		6FEEB13E3A8BBD6718F769A0 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				C95A9F3CFF393BEFAFEEC910 /* DeepSeekHarness */,
+				D4C89D6373D96B35E0D77E63 /* DeepSeekHarness */,
 			);
 			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
-		47A657EBB43396D081F9C777 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */,
-				75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -99,8 +89,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				47A657EBB43396D081F9C777 /* Pods */,
-				3320BFFE472ED2FA899D2FEC /* ExpoModulesProviders */,
+				EC92DAE044865C030ED62EAD /* Pods */,
+				6FEEB13E3A8BBD6718F769A0 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -124,12 +114,22 @@
 			path = DeepSeekHarness/Supporting;
 			sourceTree = "<group>";
 		};
-		C95A9F3CFF393BEFAFEEC910 /* DeepSeekHarness */ = {
+		D4C89D6373D96B35E0D77E63 /* DeepSeekHarness */ = {
 			isa = PBXGroup;
 			children = (
-				8788D53BB10382729083ABEC /* ExpoModulesProvider.swift */,
+				E3F933BD526B742610ABA26B /* ExpoModulesProvider.swift */,
 			);
 			name = DeepSeekHarness;
+			sourceTree = "<group>";
+		};
+		EC92DAE044865C030ED62EAD /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				C89F2EB8F8565EF7EC096D7F /* Pods-DeepSeekHarness.debug.xcconfig */,
+				A354D9C334948F87336EDDAF /* Pods-DeepSeekHarness.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "DeepSeekHarness" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				BC87AD2D3349881D3CB8CB42 /* [Expo] Configure project */,
+				C0ACBAD36F7E009DD7BBD5D8 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				4727F2AAB96DDF8C7D3869BD /* [CP] Embed Pods Frameworks */,
+				34AA3C8A48386AF982A1E102 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				E428C4CF21B1098E7C4DEF3C /* PrivacyInfo.xcprivacy in Resources */,
+				E7E0E64BA47FB7BB1C113AA2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,7 +242,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		4727F2AAB96DDF8C7D3869BD /* [CP] Embed Pods Frameworks */ = {
+		34AA3C8A48386AF982A1E102 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -310,7 +310,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-DeepSeekHarness/Pods-DeepSeekHarness-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		BC87AD2D3349881D3CB8CB42 /* [Expo] Configure project */ = {
+		C0ACBAD36F7E009DD7BBD5D8 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -342,7 +342,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				AE71C3E6F0C31958B359B6A1 /* ExpoModulesProvider.swift in Sources */,
+				1F73D47842CA9533EDE1504F /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -351,7 +351,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = F06D1099F532033A3C38C5F3 /* Pods-DeepSeekHarness.debug.xcconfig */;
+			baseConfigurationReference = C89F2EB8F8565EF7EC096D7F /* Pods-DeepSeekHarness.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -360,7 +360,9 @@
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
-					"FB_SONARKIT_ENABLED=1",
+											"FB_SONARKIT_ENABLED=1",
+						"RCT_METRO_PORT=8090",
+
 				);
 				INFOPLIST_FILE = DeepSeekHarness/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
@@ -378,7 +380,6 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.deepseek.harness;
 				PRODUCT_NAME = DeepSeekHarness;
-RCT_METRO_PORT = 8090;
 				SWIFT_OBJC_BRIDGING_HEADER = "DeepSeekHarness/DeepSeekHarness-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -389,7 +390,7 @@ RCT_METRO_PORT = 8090;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 75FD991D24CB1CF84E4B7D4C /* Pods-DeepSeekHarness.release.xcconfig */;
+			baseConfigurationReference = A354D9C334948F87336EDDAF /* Pods-DeepSeekHarness.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

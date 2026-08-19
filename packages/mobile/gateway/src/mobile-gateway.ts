@@ -21,6 +21,7 @@ const MAX_BODY_BYTES = 12 * 1024 * 1024
 const MAX_PROMPT_IMAGES = 4
 const MAX_PROMPT_TEXT_CHARS = 100_000
 const MAX_IMAGE_BASE64_CHARS = 3 * 1024 * 1024
+const MAX_SESSION_SEARCH_CHARS = 500
 const IMAGE_MEDIA_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp'])
 const PAIRING_TTL_MS = 5 * 60 * 1_000
 
@@ -226,6 +227,13 @@ export class MobileGateway {
       const sessionId = decodePathSegment(pending)
       const items = [...this.#pending.values()].filter(item => item.sessionId === sessionId)
       writeJson(response, 200, await this.#response({ items }))
+      return
+    }
+    if (url.pathname === '/v1/sessions/search') {
+      const query = requireText(body.query, '搜索词不能为空。')
+      if (query.length > MAX_SESSION_SEARCH_CHARS || query.includes('\0'))
+        throw new GatewayHttpError('bad-request', '搜索词无效或过长。')
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session.search', { query })))
       return
     }
     if (url.pathname === '/v1/sessions/list') {

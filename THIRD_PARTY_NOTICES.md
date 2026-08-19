@@ -62,10 +62,12 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`expo-camera`](https://github.com/expo/expo) | MIT |
 | [`expo-clipboard`](https://github.com/expo/expo) | MIT |
 | [`expo-constants`](https://github.com/expo/expo) | MIT |
+| [`expo-file-system`](https://github.com/expo/expo) | MIT |
 | [`expo-image-picker`](https://github.com/expo/expo) | MIT |
 | [`expo-linking`](https://github.com/expo/expo) | MIT |
 | [`expo-router`](https://github.com/expo/expo) | MIT |
 | [`expo-secure-store`](https://github.com/expo/expo) | MIT |
+| [`expo-sharing`](https://github.com/expo/expo) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
 | [`js-yaml`](https://github.com/nodeca/js-yaml) | MIT |

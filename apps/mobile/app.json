@@ -9,15 +9,34 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ai.deepseek.harness",
-      "entitlements": { "keychain-access-groups": ["$(AppIdentifierPrefix)$(CFBundleIdentifier)"] }
+      "entitlements": {
+        "keychain-access-groups": [
+          "$(AppIdentifierPrefix)$(CFBundleIdentifier)"
+        ]
+      }
     },
-    "android": { "package": "ai.deepseek.harness" },
+    "android": {
+      "package": "ai.deepseek.harness"
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-image-picker", { "photosPermission": "允许 DeepSeek Harness 访问照片，以便将图片作为消息附件发送给当前会话。" }],
-      ["expo-camera", { "cameraPermission": "允许 DeepSeek Harness 使用相机扫描桌面端配对二维码。" }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 DeepSeek Harness 访问照片，以便将图片作为消息附件发送给当前会话。"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许 DeepSeek Harness 使用相机扫描桌面端配对二维码或拍照作为会话附件。"
+        }
+      ],
+      "expo-sharing"
     ],
-    "experiments": { "typedRoutes": true }
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

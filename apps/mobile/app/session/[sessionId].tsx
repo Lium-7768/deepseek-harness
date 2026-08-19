@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard'
 import { NativeActionButton } from '@/components/native-action-button'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeMarkdown } from '@/components/native-markdown'
+import { NativeMessageAttachments } from '@/components/native-message-attachments'
 import { NativeQueueDock } from '@/components/native-queue-dock'
 import { NativeAgentActivity, NativeGoalBar, goalFromProjection } from '@/components/native-agent-activity'
 import { NativeToolCard } from '@/components/native-tool-card'
@@ -213,6 +214,10 @@ export default function SessionScreen(): React.JSX.Element {
     [history.data?.items, liveItems, olderItems],
   )
   const messages = useMemo(() => projectVisibleMessages(sourceItems), [sourceItems])
+  const eventBySeq = useMemo(
+    () => new Map(sourceItems.flatMap(item => (typeof item.seq === 'number' ? [[item.seq, item.event] as const] : []))),
+    [sourceItems],
+  )
   const hasMoreHistory = olderHasMore ?? history.data?.hasMore ?? false
   const actions = interactions.data?.items.length ?? 0
   const goal = goalFromProjection(history.data?.projections?.values)
@@ -291,7 +296,14 @@ export default function SessionScreen(): React.JSX.Element {
               ref={listRef}
               data={messages}
               keyExtractor={(item, index) => `message-${item.sourceSeq ?? index}`}
-              renderItem={({ item }) => <MessageRow item={item} />}
+              renderItem={({ item }) => (
+                <MessageRow
+                  item={item}
+                  event={item.sourceSeq === undefined ? undefined : eventBySeq.get(item.sourceSeq)}
+                  api={client}
+                  sessionId={sessionId}
+                />
+              )}
               contentContainerStyle={s.list}
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
@@ -353,7 +365,20 @@ export default function SessionScreen(): React.JSX.Element {
   )
 }
 
-function MessageRow({ item }: { item: SharedMessagePresentation }): React.JSX.Element {
+function MessageRow({
+  item,
+  event,
+  api,
+  sessionId,
+}: {
+  item: SharedMessagePresentation
+  event: Record<string, unknown> | undefined
+  api: MobileApi | undefined
+  sessionId: string | undefined
+}): React.JSX.Element {
+  const attachments = api !== undefined && sessionId !== undefined ? (
+    <NativeMessageAttachments api={api} sessionId={sessionId} event={event} />
+  ) : null
   if (item.kind === 'user')
     return (
       <View style={s.userRow}>
@@ -362,6 +387,7 @@ function MessageRow({ item }: { item: SharedMessagePresentation }): React.JSX.El
             {item.text}
           </Text>
         </View>
+        {attachments}
         <MessageActions alignment="user" text={item.text} />
       </View>
     )
@@ -379,6 +405,7 @@ function MessageRow({ item }: { item: SharedMessagePresentation }): React.JSX.El
           await Clipboard.setStringAsync(code)
         }}
       />
+      {attachments}
       <MessageActions alignment="assistant" text={item.text} />
     </View>
   )

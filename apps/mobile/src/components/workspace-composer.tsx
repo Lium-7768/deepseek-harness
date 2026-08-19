@@ -84,6 +84,25 @@ export function WorkspaceComposer({
       // The request owner presents the error; keeping the draft makes retry safe.
     }
   }
+  const appendImages = (assets: ImagePicker.ImagePickerAsset[]): void => {
+    const selected = assets.slice(0, 4 - draftImages.length).flatMap((asset) => {
+      if (!asset.base64) return []
+      return [
+        {
+          data: asset.base64,
+          // Both camera and library requests ask Expo for a compressed JPEG base64 payload.
+          mediaType: 'image/jpeg' as const,
+          ...(asset.fileName ? { name: asset.fileName } : {}),
+          uri: asset.uri,
+        },
+      ]
+    })
+    if (selected.length === 0) {
+      Alert.alert('无法添加图片', '所选图片未提供可上传的数据，请重新选择。')
+      return
+    }
+    setDraftImages(current => [...current, ...selected].slice(0, 4))
+  }
   const pickImage = async (): Promise<void> => {
     if (controlsDisabled || draftImages.length >= 4) return
     try {
@@ -94,27 +113,32 @@ export function WorkspaceComposer({
         quality: 0.85,
         selectionLimit: 4 - draftImages.length,
       })
-      if (result.canceled) return
-      const selected = result.assets.slice(0, 4 - draftImages.length).flatMap((asset) => {
-        if (!asset.base64) return []
-        return [
-          {
-            data: asset.base64,
-            // Expo returns JPEG-encoded base64 for selected library image assets.
-            mediaType: 'image/jpeg' as const,
-            ...(asset.fileName ? { name: asset.fileName } : {}),
-            uri: asset.uri,
-          },
-        ]
-      })
-      if (selected.length === 0) {
-        Alert.alert('无法添加图片', '所选图片未提供可上传的数据，请重新选择。')
-        return
-      }
-      setDraftImages(current => [...current, ...selected].slice(0, 4))
+      if (!result.canceled) appendImages(result.assets)
     } catch {
       Alert.alert('无法打开照片库', '请检查照片权限后重试。')
     }
+  }
+  const captureImage = async (): Promise<void> => {
+    if (controlsDisabled || draftImages.length >= 4) return
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync()
+      if (!permission.granted) {
+        Alert.alert('需要相机权限', '请允许 DeepSeek Harness 使用相机后再拍照。')
+        return
+      }
+      const result = await ImagePicker.launchCameraAsync({ base64: true, mediaTypes: ['images'], quality: 0.85 })
+      if (!result.canceled) appendImages(result.assets)
+    } catch {
+      Alert.alert('无法打开相机', '请检查相机权限后重试。')
+    }
+  }
+  const chooseImageSource = (): void => {
+    if (controlsDisabled || draftImages.length >= 4) return
+    Alert.alert('添加图片', '拍照和照片库中的图片都会在上传前压缩。', [
+      { text: '拍照', onPress: () => void captureImage() },
+      { text: '从照片库选择', onPress: () => void pickImage() },
+      { text: '取消', style: 'cancel' },
+    ])
   }
   const hasSession = sessionId !== undefined && sessionId.length > 0
   const modeLabel = agentPresetLabel(agentPreset)
@@ -163,7 +187,7 @@ export function WorkspaceComposer({
           accessibilityState={{ disabled: controlsDisabled || draftImages.length >= 4 }}
           disabled={controlsDisabled || draftImages.length >= 4}
           hitSlop={4}
-          onPress={() => void pickImage()}
+          onPress={chooseImageSource}
           style={({ pressed }) => [
             s.icon,
             (controlsDisabled || draftImages.length >= 4) && s.iconDisabled,

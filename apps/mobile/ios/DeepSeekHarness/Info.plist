@@ -46,7 +46,7 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>允许 DeepSeek Harness 使用相机扫描桌面端配对二维码。</string>
+	<string>允许 DeepSeek Harness 使用相机扫描桌面端配对二维码或拍照作为会话附件。</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -820,3 +820,138 @@ test('paired devices may discuss only a structurally valid plan review request',
     result: { ok: false, error: { code: 'cancelled', message: 'the user opened plan discussion', details: {} } },
   })
 })
+
+
+test('paired devices search only the desktop-visible session message surface', async t => {
+  const calls = []
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    calls.push({ url: request.url, payload })
+    if (request.url === '/api/session.search') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          type: 'server-response',
+          rpcId: payload.rpcId,
+          result: { ok: true, value: { items: [{ sessionId: 'session-1', snippet: 'The matching desktop message.' }], hasMore: true } },
+        }),
+      )
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Search test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream.')
+
+  const response = await fetch(`${status.url}/v1/sessions/search`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query: 'matching' }),
+  })
+  assert.equal(response.status, 200)
+  assert.deepEqual((await response.json()).data, {
+    items: [{ sessionId: 'session-1', snippet: 'The matching desktop message.' }],
+    hasMore: true,
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0]?.url, '/api/session.search')
+  assert.equal(calls[0]?.payload.type, 'client-request')
+  assert.equal(calls[0]?.payload.method, 'session.search')
+  assert.deepEqual(calls[0]?.payload.payload, { query: 'matching' })
+
+  const invalid = await fetch(`${status.url}/v1/sessions/search`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query: 'invalid\u0000query' }),
+  })
+  assert.equal(invalid.status, 400)
+  assert.equal(calls.length, 1)
+})
+
+
+test('paired devices read durable images only through the session-authorized attachment route', async t => {
+  const calls = []
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    calls.push({ url: request.url, payload })
+    if (request.url === '/api/session.attachment') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          type: 'server-response',
+          rpcId: payload.rpcId,
+          result: {
+            ok: true,
+            value: {
+              attachment: {
+                attachmentId: 'image-a',
+                mediaType: 'image/png',
+                bytes: 4,
+                width: 1,
+                height: 1,
+                name: 'fixture.png',
+              },
+              data: 'AA==',
+            },
+          },
+        }),
+      )
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Attachment test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream.')
+
+  const response = await fetch(`${status.url}/v1/sessions/session-a/attachments/image-a`, { method: 'POST', headers, body: '{}' })
+  assert.equal(response.status, 200)
+  assert.deepEqual((await response.json()).data, {
+    attachment: { attachmentId: 'image-a', mediaType: 'image/png', bytes: 4, width: 1, height: 1, name: 'fixture.png' },
+    data: 'AA==',
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0]?.url, '/api/session.attachment')
+  assert.equal(calls[0]?.payload.type, 'client-request')
+  assert.equal(calls[0]?.payload.method, 'session.attachment')
+  assert.deepEqual(calls[0]?.payload.payload, { sessionId: 'session-a', attachmentId: 'image-a' })
+})

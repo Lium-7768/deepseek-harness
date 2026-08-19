@@ -2,6 +2,7 @@ import type {
   MobileAgentPresetDetail,
   MobileAgentPresetListPayload,
   MobileGoalRef,
+  MobileImageAttachmentPayload,
   MobileJobsPayload,
   MobileSubagentCatalogPayload,
   MobileConnection,
@@ -16,6 +17,7 @@ import type {
   MobileSettingsPayload,
   MobileSettingsUpdatePayload,
   MobileSessionModelsPayload,
+  MobileSessionSearchPayload,
   PendingInteractionsPayload,
   SessionEventsPayload,
   SessionHistoryPayload,
@@ -153,6 +155,11 @@ export class MobileApi {
     return this.#post<SessionListPayload>('/v1/sessions/list', {})
   }
 
+  /** Searches the desktop-visible user, assistant, and steering message surface. */
+  searchSessions(query: string): Promise<MobileSessionSearchPayload> {
+    return this.#post<MobileSessionSearchPayload>('/v1/sessions/search', { query })
+  }
+
   /** Loads one durable session-history page from the desktop runtime. */
   sessionHistory(
     sessionId: string,
@@ -183,8 +190,8 @@ export class MobileApi {
     return this.#post(`/v1/sessions/${encodeURIComponent(sessionId)}/archive`, {})
   }
 
-  /** Reads one durable image attachment owned by a session. */
-  readAttachment(sessionId: string, attachmentId: string): Promise<{ attachment: unknown; data: string }> {
+  /** Reads one durable image only after the desktop proves the current session references it. */
+  readAttachment(sessionId: string, attachmentId: string): Promise<MobileImageAttachmentPayload> {
     return this.#post(
       `/v1/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {},

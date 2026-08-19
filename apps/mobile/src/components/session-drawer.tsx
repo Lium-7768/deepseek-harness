@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { DrawerContentScrollView, type DrawerContentComponentProps } from 'expo-router/drawer'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Alert, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { MobileApi } from '@/api/mobile-api'
@@ -36,6 +36,7 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   const { navigation, state } = props
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedText(search.trim(), 250)
   const [showAll, setShowAll] = useState(false)
   const [expandedViewSection, setExpandedViewSection] = useState<'group' | 'sort' | undefined>()
   const [optionsOpen, setOptionsOpen] = useState(false)
@@ -51,6 +52,11 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
     enabled: Boolean(connection),
     queryFn: () => new MobileApi(requireConnection(connection)).listSessions(),
   })
+  const contentSearch = useQuery({
+    queryKey: ['session-search', connection?.gatewayUrl, connection?.deviceId, debouncedSearch],
+    enabled: Boolean(connection) && debouncedSearch.length > 0,
+    queryFn: () => new MobileApi(requireConnection(connection)).searchSessions(debouncedSearch),
+  })
   const currentSessionId = currentSessionFromState(state)
   const archivedSessionIds = useMemo(
     () => new Set(query.data?.archivedSessionIds ?? []),
@@ -61,24 +67,26 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
     [archivedSessionIds, query.data?.items],
   )
   const workspaces = query.data?.workspaces ?? []
-  const filteredSessions = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    const matches = term
-      ? sessions.filter(
-        item =>
-          String(item.title ?? '')
-            .toLowerCase()
-            .includes(term) || item.sessionId.toLowerCase().includes(term),
-      )
-      : sessions
-    return sortSessions(matches, 'updated')
-  }, [search, sessions])
+  const searchActive = search.trim().length > 0
+  const sessionById = useMemo(() => new Map(sessions.map(item => [item.sessionId, item])), [sessions])
+  const searchedSessions = useMemo(
+    () =>
+      (contentSearch.data?.items ?? []).flatMap((hit) => {
+        const session = sessionById.get(hit.sessionId)
+        return session === undefined ? [] : [{ ...session, searchSnippet: hit.snippet }]
+      }),
+    [contentSearch.data?.items, sessionById],
+  )
+  const filteredSessions = useMemo(
+    () => sortSessions(searchActive ? searchedSessions : sessions, 'updated'),
+    [searchActive, searchedSessions, sessions],
+  )
   const workspaceDataAvailable = hasWorkspaceData(workspaces)
-  const visibleSessions = showAll || search.trim() !== '' ? filteredSessions : filteredSessions.slice(0, 5)
+  const visibleSessions = searchActive || showAll ? filteredSessions : filteredSessions.slice(0, 5)
   const remaining = Math.max(0, filteredSessions.length - visibleSessions.length)
   const rows = useMemo<SessionDrawerRow[]>(
-    () => sessionRows(visibleSessions, workspaces, groupBy),
-    [groupBy, visibleSessions, workspaces],
+    () => sessionRows(visibleSessions, workspaces, searchActive ? 'flat' : groupBy),
+    [groupBy, searchActive, visibleSessions, workspaces],
   )
   const visibleRows = useMemo(() => visibleWorkspaceRows(rows, collapsedWorkspaceKeys), [collapsedWorkspaceKeys, rows])
 
@@ -314,8 +322,9 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                 accessibilityLabel="搜索会话"
                 autoFocus
                 onChangeText={setSearch}
-                placeholder="搜索会话"
+                placeholder="搜索所有会话内容"
                 placeholderTextColor={mobileTheme.colors.inkFaint}
+                maxLength={500}
                 style={styles.searchInput}
                 value={search}
               />
@@ -340,9 +349,13 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                   <Text style={styles.emptyState}>
                     {query.isError
                       ? '会话加载失败，请稍后重试。'
-                      : search.trim() !== ''
-                        ? '无匹配会话。'
-                        : '暂无会话。'}
+                      : searchActive && contentSearch.isPending
+                        ? '正在搜索会话内容…'
+                        : searchActive && contentSearch.isError
+                          ? '搜索会话内容失败，请稍后重试。'
+                          : searchActive
+                            ? '未找到匹配内容。'
+                            : '暂无会话。'}
                   </Text>
                 )
               ) : (
@@ -426,7 +439,8 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                   ),
                 )
               )}
-              {remaining > 0 || showAll ? (
+              {searchActive && contentSearch.data?.hasMore ? <Text style={styles.searchHint}>结果较多，请使用更具体的关键词。</Text> : null}
+              {!searchActive && (remaining > 0 || showAll) ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={showAll ? '收起会话' : `展开其余 ${remaining} 个会话`}
@@ -508,6 +522,7 @@ function SessionItem({
 }): React.JSX.Element {
   const title = typeof session.title === 'string' && session.title.trim() ? session.title : '新会话'
   const time = sessionTimeLabel(session)
+  const snippet = typeof session.searchSnippet === 'string' ? session.searchSnippet : undefined
   return (
     <Pressable
       accessibilityRole="button"
@@ -522,8 +537,8 @@ function SessionItem({
       <Text numberOfLines={1} style={styles.sessionTitle}>
         {title}
       </Text>
-      <Text numberOfLines={1} style={styles.sessionTime}>
-        {time}
+      <Text numberOfLines={snippet === undefined ? 1 : 2} style={styles.sessionTime}>
+        {snippet ?? time}
       </Text>
     </Pressable>
   )
@@ -553,6 +568,15 @@ function OptionRow({
       {selected ? <NativeIcon name="check" size={17} color={mobileTheme.colors.accentText} /> : null}
     </Pressable>
   )
+}
+
+function useDebouncedText(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [delayMs, value])
+  return debounced
 }
 
 function currentSessionFromState(state: DrawerContentComponentProps['state']): string | undefined {
@@ -674,6 +698,7 @@ const styles = StyleSheet.create({
   emptyState: { color: mobileTheme.colors.inkMuted, paddingHorizontal: 8, paddingVertical: 24, textAlign: 'center' },
   expandButton: { alignItems: 'center', flexDirection: 'row', gap: 2, paddingHorizontal: 12, paddingVertical: 12 },
   expandText: { color: mobileTheme.colors.inkMuted, fontSize: 13 },
+  searchHint: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 18, paddingHorizontal: 4, paddingVertical: 8 },
   optionsTitle: {
     color: mobileTheme.colors.inkMuted,
     fontSize: 11,

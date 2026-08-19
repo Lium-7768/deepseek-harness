@@ -264,3 +264,43 @@ describe('MobileApi agent observation and control requests', () => {
     ])
   })
 })
+
+
+describe('MobileApi safe search and attachment reads', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ contractVersion: 1, data: {} }, 200)))
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('uses constrained authenticated routes for desktop search snippets and session-authorized images', async () => {
+    const api = new MobileApi(connection)
+    await api.searchSessions('search phrase')
+    await api.readAttachment('session/a', 'attachment/a')
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>
+    expect(
+      calls.map(([url, init]) => ({
+        url: new URL(url).pathname,
+        headers: init.headers,
+        body: JSON.parse(String(init.body)),
+      })),
+    ).toEqual([
+      {
+        url: '/v1/sessions/search',
+        headers: { authorization: 'Bearer device-1.token-1', 'content-type': 'application/json' },
+        body: { query: 'search phrase' },
+      },
+      {
+        url: '/v1/sessions/session%2Fa/attachments/attachment%2Fa',
+        headers: { authorization: 'Bearer device-1.token-1', 'content-type': 'application/json' },
+        body: {},
+      },
+    ])
+  })
+})

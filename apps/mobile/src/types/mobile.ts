@@ -77,6 +77,32 @@ export interface SessionListPayload {
   archivedSessionIds: string[]
 }
 
+/** One desktop search hit. Session title and workspace metadata stay owned by SessionListPayload. */
+export interface MobileSessionSearchItem {
+  sessionId: string
+  snippet: string
+}
+
+export interface MobileSessionSearchPayload {
+  items: MobileSessionSearchItem[]
+  hasMore: boolean
+}
+
+/** A durable image only retrievable after the desktop proves the current session references it. */
+export interface MobileImageAttachmentRef {
+  attachmentId: string
+  mediaType: MobileImageMediaType
+  bytes: number
+  width: number
+  height: number
+  name?: string
+}
+
+export interface MobileImageAttachmentPayload {
+  attachment: MobileImageAttachmentRef
+  data: string
+}
+
 export interface SessionHistoryItem {
   seq?: number
   event: Record<string, unknown>
