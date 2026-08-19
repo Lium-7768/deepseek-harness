@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { NativeIcon, type NativeIconName } from '@/components/native-icon'
 import type { NativeConversationRow } from '@/components/session-conversation-logic'
 import { mobileTheme } from '@/theme'
@@ -68,13 +68,7 @@ export function NativeToolCard({ presentation, row }: { presentation?: SharedMes
   const [icon, fallbackTitle] = useMemo(() => META[variantFor(model.toolName)], [model.toolName])
   const title = model.toolName || fallbackTitle
   const stateLabel = model.state === 'completed' ? '已完成' : model.state === 'failed' ? '失败' : '运行中'
-  const details = [
-    model.toolInput ? `输入\n${model.toolInput}` : '',
-    model.output ? `输出\n${model.output}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-  const hasDetails = details.length > 0
+  const hasDetails = Boolean(model.toolInput || model.output)
   return (
     <View style={[styles.root, model.state === 'failed' && styles.failedRoot]}>
       <Pressable
@@ -113,11 +107,24 @@ export function NativeToolCard({ presentation, row }: { presentation?: SharedMes
       </Pressable>
       {expanded ? (
         <View style={styles.details}>
-          <Text selectable style={styles.detailText}>
-            {details}
-          </Text>
+          {model.toolInput ? <ToolPayload label="IN" text={model.toolInput} /> : null}
+          {model.toolInput && model.output ? <View style={styles.divider} /> : null}
+          {model.output ? <ToolPayload label="OUT" text={model.output} failed={model.state === 'failed'} /> : null}
         </View>
       ) : null}
+    </View>
+  )
+}
+
+function ToolPayload({ label, text, failed = false }: { label: 'IN' | 'OUT'; text: string; failed?: boolean }): React.JSX.Element {
+  return (
+    <View style={styles.payload}>
+      <Text style={styles.payloadLabel}>{label}</Text>
+      <ScrollView nestedScrollEnabled style={styles.payloadScroll} showsVerticalScrollIndicator>
+        <Text selectable style={[styles.detailText, failed && styles.failedDetailText]}>
+          {text}
+        </Text>
+      </ScrollView>
     </View>
   )
 }
@@ -143,5 +150,10 @@ const styles = StyleSheet.create({
     marginLeft: 20,
     padding: mobileTheme.spacing.sm,
   },
+  divider: { backgroundColor: mobileTheme.colors.border, height: StyleSheet.hairlineWidth },
+  payload: { gap: 4 },
+  payloadLabel: { color: mobileTheme.colors.inkFaint, fontSize: 10, fontWeight: '800' },
+  payloadScroll: { maxHeight: 208 },
   detailText: { color: mobileTheme.colors.ink, fontFamily: 'Menlo', fontSize: 12, lineHeight: 18 },
+  failedDetailText: { color: mobileTheme.colors.danger },
 })

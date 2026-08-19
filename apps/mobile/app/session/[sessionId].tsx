@@ -38,7 +38,7 @@ import { readPermissionSelect } from '@/components/session-composer-logic'
 import { messageActionLayout, type MessageActionAlignment } from '@/components/session-message-logic'
 import { sessionStatisticsLine } from '@/components/session-stats-logic'
 import { sessionDisplayTitle } from '@/components/session-drawer-logic'
-import { isNearLatestMessage, shouldScrollToLatest } from '@/components/session-scroll-logic'
+import { isNearLatestMessage, shouldScrollToLatest, shouldShowReturnToLatest } from '@/components/session-scroll-logic'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
@@ -59,6 +59,7 @@ export default function SessionScreen(): React.JSX.Element {
   const submittedDraft = useRef<string | undefined>(undefined)
   const initialLatestPositionPending = useRef(true)
   const nearLatestMessage = useRef(true)
+  const [showReturnToLatest, setShowReturnToLatest] = useState(false)
   const [liveItems, setLiveItems] = useState<SharedEventItem[]>([])
   const [olderItems, setOlderItems] = useState<SharedEventItem[]>([])
   const [olderHasMore, setOlderHasMore] = useState<boolean | undefined>()
@@ -216,6 +217,7 @@ export default function SessionScreen(): React.JSX.Element {
     submittedDraft.current = undefined
     initialLatestPositionPending.current = true
     nearLatestMessage.current = true
+    setShowReturnToLatest(false)
     setLiveItems([])
     setOlderItems([])
     setOlderHasMore(undefined)
@@ -232,6 +234,7 @@ export default function SessionScreen(): React.JSX.Element {
     if (tab !== 'chat') return
     initialLatestPositionPending.current = true
     nearLatestMessage.current = true
+    setShowReturnToLatest(false)
   }, [tab])
 
   useEffect(() => {
@@ -329,67 +332,84 @@ export default function SessionScreen(): React.JSX.Element {
             ) : null}
             {tab === 'trajectory' ? <TrajectoryPanel items={sourceItems} /> : null}
             {tab === 'chat' ? <ContextRows items={sourceItems} /> : null}
-            <FlatList
-              style={tab === 'chat' ? s.listView : s.hidden}
-              ref={listRef}
-              data={messages}
-              keyExtractor={(item, index) => `message-${item.kind}-${item.sourceSeq ?? 'transient'}-${index}`}
-              renderItem={({ item }) => (
-                <MessageRow
-                  item={item}
-                  event={item.sourceSeq === undefined ? undefined : eventBySeq.get(item.sourceSeq)}
-                  api={client}
-                  sessionId={sessionId}
-                />
-              )}
-              contentContainerStyle={s.list}
-              keyboardDismissMode="on-drag"
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              ListHeaderComponent={
-                hasMoreHistory ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="加载更早消息"
-                    accessibilityState={{ busy: loadOlder.isPending }}
-                    disabled={loadOlder.isPending}
-                    onPress={() => void loadOlder.mutateAsync()}
-                    style={({ pressed }) => [s.loadOlder, pressed && s.pressed]}
-                  >
-                    <NativeIcon name="expand-less" size={16} color={mobileTheme.colors.accentText} />
-                    <Text style={s.loadOlderText}>{loadOlder.isPending ? '正在加载…' : '加载更早消息'}</Text>
-                  </Pressable>
-                ) : null
-              }
-              ListFooterComponent={status === 'running' ? <NativeTurnStatus startedAt={runningTurnStartedAt} /> : null}
-              ListEmptyComponent={
-                history.isPending ? (
-                  <Text style={s.empty}>正在加载会话消息…</Text>
-                ) : (
-                  <Text style={s.empty}>此会话暂无可见消息。</Text>
-                )
-              }
-              onContentSizeChange={() => {
-                const initialPositionPending = initialLatestPositionPending.current
-                if (
-                  shouldScrollToLatest({
-                    hasMessages: messages.length > 0,
-                    initialPositionPending,
-                    nearLatest: nearLatestMessage.current,
-                  })
-                ) {
-                  listRef.current?.scrollToEnd({ animated: !initialPositionPending })
-                  if (initialPositionPending) initialLatestPositionPending.current = false
+            <View style={tab === 'chat' ? s.listStage : s.hidden}>
+              <FlatList
+                style={s.listView}
+                ref={listRef}
+                data={messages}
+                keyExtractor={(item, index) => `message-${item.kind}-${item.sourceSeq ?? 'transient'}-${index}`}
+                renderItem={({ item }) => (
+                  <MessageRow
+                    item={item}
+                    event={item.sourceSeq === undefined ? undefined : eventBySeq.get(item.sourceSeq)}
+                    api={client}
+                    sessionId={sessionId}
+                  />
+                )}
+                contentContainerStyle={s.list}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                ListHeaderComponent={
+                  hasMoreHistory ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="加载更早消息"
+                      accessibilityState={{ busy: loadOlder.isPending }}
+                      disabled={loadOlder.isPending}
+                      onPress={() => void loadOlder.mutateAsync()}
+                      style={({ pressed }) => [s.loadOlder, pressed && s.pressed]}
+                    >
+                      <NativeIcon name="expand-less" size={16} color={mobileTheme.colors.accentText} />
+                      <Text style={s.loadOlderText}>{loadOlder.isPending ? '正在加载…' : '加载更早消息'}</Text>
+                    </Pressable>
+                  ) : null
                 }
-              }}
-              onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-                const nearLatest = isNearLatestMessage(contentSize.height, layoutMeasurement.height, contentOffset.y)
-                nearLatestMessage.current = nearLatest
-                if (!nearLatest) initialLatestPositionPending.current = false
-              }}
-              scrollEventThrottle={16}
-            />
+                ListFooterComponent={status === 'running' ? <NativeTurnStatus startedAt={runningTurnStartedAt} /> : null}
+                ListEmptyComponent={
+                  history.isPending ? (
+                    <Text style={s.empty}>正在加载会话消息…</Text>
+                  ) : (
+                    <Text style={s.empty}>此会话暂无可见消息。</Text>
+                  )
+                }
+                onContentSizeChange={() => {
+                  const initialPositionPending = initialLatestPositionPending.current
+                  if (
+                    shouldScrollToLatest({
+                      hasMessages: messages.length > 0,
+                      initialPositionPending,
+                      nearLatest: nearLatestMessage.current,
+                    })
+                  ) {
+                    listRef.current?.scrollToEnd({ animated: !initialPositionPending })
+                    if (initialPositionPending) initialLatestPositionPending.current = false
+                  }
+                }}
+                onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
+                  const nearLatest = isNearLatestMessage(contentSize.height, layoutMeasurement.height, contentOffset.y)
+                  nearLatestMessage.current = nearLatest
+                  setShowReturnToLatest(shouldShowReturnToLatest({ hasMessages: messages.length > 0, nearLatest }))
+                  if (!nearLatest) initialLatestPositionPending.current = false
+                }}
+                scrollEventThrottle={16}
+              />
+              {showReturnToLatest ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="返回最新消息"
+                  onPress={() => {
+                    nearLatestMessage.current = true
+                    setShowReturnToLatest(false)
+                    listRef.current?.scrollToEnd({ animated: true })
+                  }}
+                  style={({ pressed }) => [s.returnToLatest, pressed && s.pressed]}
+                >
+                  <NativeIcon name="chevron-down" size={20} color={mobileTheme.colors.ink} />
+                </Pressable>
+              ) : null}
+            </View>
             {tab === 'chat' ? (
               <LocalizedSessionStats items={sourceItems} projectionValues={history.data?.projections?.values} />
             ) : null}
@@ -620,7 +640,22 @@ const s = StyleSheet.create({
   unavailable: { alignItems: 'center', flex: 1, gap: 12, justifyContent: 'center', padding: 28 },
   unavailableText: { color: mobileTheme.colors.inkMuted, fontSize: 14, textAlign: 'center' },
   unavailableAction: { minWidth: 132 },
+  listStage: { flex: 1, position: 'relative' },
   listView: { flex: 1 },
+  returnToLatest: {
+    alignItems: 'center',
+    backgroundColor: mobileTheme.colors.surface,
+    borderColor: mobileTheme.colors.border,
+    borderRadius: mobileTheme.radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    bottom: mobileTheme.spacing.md,
+    height: 40,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: mobileTheme.spacing.lg,
+    width: 40,
+    ...mobileTheme.elevation.card,
+  },
   loadOlder: {
     alignItems: 'center',
     alignSelf: 'center',

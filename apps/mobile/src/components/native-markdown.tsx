@@ -152,27 +152,14 @@ export function NativeMarkdown({
           const copied = copiedIndex === index
           const failed = copyFailedIndex === index
           return (
-            <View key={key} style={styles.codeCard}>
-              <View style={styles.codeHeader}>
-                <Text style={styles.codeLanguage}>{block.language || '代码'}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={copied ? '代码已复制' : failed ? '复制失败，请重试' : '复制代码'}
-                  hitSlop={8}
-                  onPress={() => void copy(index, block.text)}
-                  style={styles.copyButton}
-                >
-                  <NativeIcon
-                    name={copied ? 'check' : 'content-copy'}
-                    size={16}
-                    color={copied ? '#86efac' : failed ? mobileTheme.colors.danger : '#bfdbfe'}
-                  />
-                </Pressable>
-              </View>
-              <Text selectable style={styles.codeText}>
-                {block.text}
-              </Text>
-            </View>
+            <NativeCodeBlock
+              key={key}
+              copied={copied}
+              failed={failed}
+              language={block.language}
+              onCopy={() => void copy(index, block.text)}
+              text={block.text}
+            />
           )
         }
         const content = inline(block.text, key)
@@ -207,6 +194,58 @@ export function NativeMarkdown({
     </View>
   )
 }
+function NativeCodeBlock({
+  copied,
+  failed,
+  language,
+  onCopy,
+  text,
+}: {
+  copied: boolean
+  failed: boolean
+  language?: string
+  onCopy: () => void
+  text: string
+}): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const lineCount = text.split('\n').length
+  const collapsible = lineCount > 16
+  return (
+    <View style={styles.codeCard}>
+      <View style={styles.codeHeader}>
+        <Text style={styles.codeLanguage}>{language || '代码'}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copied ? '代码已复制' : failed ? '复制失败，请重试' : '复制代码'}
+          hitSlop={8}
+          onPress={onCopy}
+          style={styles.copyButton}
+        >
+          <NativeIcon
+            name={copied ? 'check' : 'content-copy'}
+            size={16}
+            color={copied ? '#86efac' : failed ? mobileTheme.colors.danger : '#bfdbfe'}
+          />
+        </Pressable>
+      </View>
+      <Text selectable numberOfLines={collapsible && !expanded ? 16 : undefined} style={styles.codeText}>
+        {text}
+      </Text>
+      {collapsible ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? '折叠代码块' : '展开完整代码块'}
+          onPress={() => setExpanded(value => !value)}
+          style={styles.codeToggle}
+        >
+          <Text style={styles.codeToggleText}>{expanded ? '收起' : `展开全部 ${lineCount} 行`}</Text>
+          <NativeIcon name={expanded ? 'expand-less' : 'expand-more'} size={15} color="#bfdbfe" />
+        </Pressable>
+      ) : null}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   root: { gap: mobileTheme.spacing.lg },
   body: { color: mobileTheme.colors.ink, fontSize: 16, lineHeight: 28 },
@@ -238,4 +277,6 @@ const styles = StyleSheet.create({
     width: mobileTheme.touch.iconButton,
   },
   codeText: { color: mobileTheme.colors.codeForeground, fontFamily: 'Menlo', fontSize: 13, lineHeight: 22 },
+  codeToggle: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: mobileTheme.touch.minTarget },
+  codeToggleText: { color: '#bfdbfe', fontSize: 12, fontWeight: '700' },
 })

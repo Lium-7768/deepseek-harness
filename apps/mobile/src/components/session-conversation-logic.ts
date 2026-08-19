@@ -51,13 +51,50 @@ type ContentBlock = { type?: unknown; text?: unknown }
  * @returns Native rows derived only from desktop session events.
  */
 export function projectNativeConversationRows(items: readonly SharedEventItem[]): NativeConversationRow[] {
+  const orderedItems = [...items].sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0))
+  const settledAssistantSteps = new Set(
+    orderedItems.flatMap((item) => {
+      if (stringField(item.event.type) !== 'assistant/message') return []
+      const key = eventStepKey(recordField(item.event.data) ?? item.event)
+      return key === undefined ? [] : [key]
+    }),
+  )
   const rows: NativeConversationRow[] = []
   const toolRowByCallId = new Map<string, number>()
-  for (const item of [...items].sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0))) {
+  const streamingRowByBlock = new Map<string, number>()
+  for (const item of orderedItems) {
     const event = item.event
     const type = stringField(event.type)
     const data = recordField(event.data) ?? event
     const sourceSeq = item.seq
+    if (type === 'assistant/chunk') {
+      const stepKey = eventStepKey(data)
+      const chunk = recordField(data.chunk)
+      const chunkType = stringField(chunk?.type)
+      const index = numberField(chunk?.index)
+      const text = stringField(chunk?.text)
+      if (
+        stepKey !== undefined
+        && !settledAssistantSteps.has(stepKey)
+        && index !== undefined
+        && text !== undefined
+        && (chunkType === 'reasoning-delta' || chunkType === 'text-delta')
+      ) {
+        const kind = chunkType === 'reasoning-delta' ? 'reasoning' : 'assistant'
+        const blockKey = `${stepKey}:${kind}:${index}`
+        const rowIndex = streamingRowByBlock.get(blockKey)
+        if (rowIndex !== undefined) {
+          const existing = rows[rowIndex]
+          if (existing?.kind === kind) {
+            rows[rowIndex] = { ...existing, text: `${existing.text}${text}` }
+            continue
+          }
+        }
+        rows.push({ kind, text, ...(sourceSeq === undefined ? {} : { sourceSeq }) })
+        streamingRowByBlock.set(blockKey, rows.length - 1)
+      }
+      continue
+    }
     if (type === 'user/message') {
       const text = textFromMessage(data)
       if (text) rows.push({ kind: 'user', text, ...(sourceSeq === undefined ? {} : { sourceSeq }), ...eventTime(event) })
@@ -161,6 +198,12 @@ export function activeTurnStartedAt(items: readonly SharedEventItem[]): number |
     } else if (type === 'turn/end') openTurns.delete(turn)
   }
   return [...openTurns.values()].at(-1)
+}
+
+function eventStepKey(data: EventRecord): string | undefined {
+  const turn = numberField(data.turn)
+  const step = numberField(data.step)
+  return turn === undefined || step === undefined ? undefined : `${turn}:${step}`
 }
 
 function messageBlocks(data: EventRecord): ContentBlock[] {

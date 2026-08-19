@@ -84,6 +84,35 @@ describe('projectNativeConversationRows', () => {
     ])
   })
 
+  it('projects in-progress reasoning and text deltas before a durable assistant message exists', () => {
+    expect(
+      projectNativeConversationRows([
+        { seq: 1, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'reasoning-delta', index: 0, text: '分析' } } } },
+        { seq: 2, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'reasoning-delta', index: 0, text: '中' } } } },
+        { seq: 3, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'text-delta', index: 1, text: '正在' } } } },
+        { seq: 4, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'text-delta', index: 1, text: '处理。' } } } },
+      ]),
+    ).toEqual([
+      { kind: 'reasoning', sourceSeq: 1, text: '分析中' },
+      { kind: 'assistant', sourceSeq: 3, text: '正在处理。' },
+    ])
+  })
+
+  it('replaces same-step streaming deltas with the durable assistant message once settled', () => {
+    expect(
+      projectNativeConversationRows([
+        { seq: 1, event: { type: 'assistant/chunk', data: { turn: 3, step: 2, chunk: { type: 'text-delta', index: 0, text: '临时' } } } },
+        {
+          seq: 2,
+          event: {
+            type: 'assistant/message',
+            data: { turn: 3, step: 2, message: { content: [{ type: 'text', text: '最终正文。' }] } },
+          },
+        },
+      ]),
+    ).toEqual([{ kind: 'assistant', sourceSeq: 2, text: '最终正文。' }])
+  })
+
   it('returns only the latest unclosed desktop turn start time', () => {
     expect(
       activeTurnStartedAt([

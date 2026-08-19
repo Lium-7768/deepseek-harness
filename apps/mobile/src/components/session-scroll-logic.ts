@@ -12,6 +12,11 @@ export function isNearLatestMessage(
   return contentHeight - viewportHeight - Math.max(0, offsetY) <= Math.max(0, proximityPx)
 }
 
+/** Decides whether the native conversation should expose a manual return-to-latest control. */
+export function shouldShowReturnToLatest({ hasMessages, nearLatest }: { hasMessages: boolean; nearLatest: boolean }): boolean {
+  return hasMessages && !nearLatest
+}
+
 /** Decides whether the native list may move to the latest message without overriding deliberate history reading. */
 export function shouldScrollToLatest({
   hasMessages,
