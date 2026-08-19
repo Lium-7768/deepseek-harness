@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MobileApi, MobileApiError, mobileErrorMessage, redeemMobilePairing } from '../src/api/mobile-api.ts'
+import { MobileApi, MobileApiError, mobileAuthorization, mobileErrorMessage, redeemMobilePairing } from '../src/api/mobile-api.ts'
 
 const connection = { gatewayUrl: 'http://127.0.0.1:52404', deviceId: 'device-1', accessToken: 'token-1' }
+
+describe('MobileApi authentication', () => {
+  it('uses the paired device ID together with its token for every gateway credential', () => {
+    expect(mobileAuthorization(connection)).toBe('Bearer device-1.token-1')
+  })
+})
 
 describe('MobileApi error presentation', () => {
   let fetchMock: ReturnType<typeof vi.fn>

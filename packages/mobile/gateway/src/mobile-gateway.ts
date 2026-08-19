@@ -241,7 +241,7 @@ export class MobileGateway {
         this.#dsh.call<DshSessionList>('session.list', {}),
         this.#dsh.call<DshWorkspaceList>('workspace.list', {}),
       ])
-      const items = await Promise.all((summary.items ?? []).map(item => withVisibleTitle(this.#dsh, item)))
+      const items = await Promise.all((summary.items ?? []).map(item => withVisibleSessionMetadata(this.#dsh, item)))
       writeJson(
         response,
         200,
@@ -1070,15 +1070,35 @@ function isFallbackSessionTitle(title: unknown): boolean {
     normalized === '' || normalized === '新会话' || normalized === 'new session' || normalized === 'untitled session'
   )
 }
-async function withVisibleTitle(client: DshLoopbackClient, item: DshSessionSummary): Promise<DshSessionSummary> {
-  if (!isFallbackSessionTitle(item.title)) return item
+async function withVisibleSessionMetadata(client: DshLoopbackClient, item: DshSessionSummary): Promise<DshSessionSummary> {
   try {
     const history = await client.call<DshHistory>('session.history', { sessionId: item.sessionId })
-    const title = firstVisibleUserText(history)
-    return title === undefined ? item : { ...item, title }
+    const values = sessionProjectionValues(history)
+    const projectedTitle = typeof values?.title === 'string' && values.title.trim() !== '' ? values.title : undefined
+    const metadata = values?.sessionListMetadata
+    const blank = metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>).blank
+      : undefined
+    const fallbackTitle = isFallbackSessionTitle(item.title) ? firstVisibleUserText(history) : undefined
+    const title = projectedTitle ?? fallbackTitle
+    return {
+      ...item,
+      ...(title === undefined ? {} : { title }),
+      ...(typeof blank === 'boolean' ? { blank } : {}),
+    }
   } catch {
     return item
   }
+}
+
+/** Returns the desktop-owned session projections when the history response carries a valid value map. */
+function sessionProjectionValues(history: DshHistory): Record<string, unknown> | undefined {
+  const projections = history.projections
+  if (projections === null || typeof projections !== 'object' || Array.isArray(projections)) return undefined
+  const values = (projections as Record<string, unknown>).values
+  return values !== null && typeof values === 'object' && !Array.isArray(values)
+    ? values as Record<string, unknown>
+    : undefined
 }
 function firstVisibleUserText(history: DshHistory): string | undefined {
   for (const entry of history.events ?? []) {

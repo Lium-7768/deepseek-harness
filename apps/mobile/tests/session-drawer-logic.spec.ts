@@ -86,6 +86,29 @@ describe('session drawer logic', () => {
     expect(sessionDisplayTitle({ ...session('empty', 1), title: '   ' })).toBe('新会话')
   })
 
+  it('keeps hidden desktop workspace members accounted without leaking blank or subagent rows into ungrouped', () => {
+    const rows = sessionRows(
+      [
+        session('blank-other', 4, { blank: true }),
+        session('blank-current', 3, { blank: true }),
+        session('titled', 2, { title: '桌面标题' }),
+        session('child', 1, { origin: 'subagent' }),
+        session('loose', 5, { title: '未分组会话' }),
+      ],
+      [{ workspaceId: 'project', title: '项目', sessionIds: ['blank-other', 'blank-current', 'titled', 'child'] }],
+      'workspace',
+      'blank-current',
+    )
+
+    expect(rows.map(row => row.kind === 'workspace' ? row.label : row.session.sessionId)).toEqual([
+      '项目',
+      'blank-current',
+      'titled',
+      '未分组',
+      'loose',
+    ])
+  })
+
   it('limits overflow per workspace without hiding a later desktop workspace', () => {
     const projectSessions = Array.from({ length: COLLAPSED_WORKSPACE_SESSION_LIMIT + 1 }, (_, index) =>
       session(`project-${index + 1}`, index),

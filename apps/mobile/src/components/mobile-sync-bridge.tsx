@@ -2,6 +2,7 @@ import { fetch } from 'expo/fetch'
 import { useEffect, useRef } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 import { useQueryClient } from '@tanstack/react-query'
+import { mobileAuthorization } from '@/api/mobile-api'
 import { useConnectionStore } from '@/state/connection'
 import { useMobileSyncStore } from '@/state/mobile-sync'
 import type { MobileStreamEvent, SessionEventItem, SessionEventsPayload } from '@/types/mobile'
@@ -51,7 +52,7 @@ export function MobileSyncBridge(): null {
       setStatus('connecting')
       const controller = new AbortController()
       streamAbort.current = controller
-      void consumeMobileEventStream(`${current.gatewayUrl}/v1/events`, current.accessToken, controller.signal, (event) => {
+      void consumeMobileEventStream(`${current.gatewayUrl}/v1/events`, mobileAuthorization(current), controller.signal, (event) => {
         if (seenEventIds.current.has(event.eventId)) return
         rememberEventId(seenEventIds.current, event.eventId)
         markEvent()
@@ -61,7 +62,10 @@ export function MobileSyncBridge(): null {
           if (!controller.signal.aborted) scheduleRetry()
         })
         .catch(() => {
-          if (!controller.signal.aborted) scheduleRetry()
+          if (!controller.signal.aborted) {
+            setStatus('disconnected')
+            scheduleRetry()
+          }
         })
         .finally(() => {
           if (streamAbort.current === controller) streamAbort.current = undefined
@@ -92,12 +96,12 @@ export function MobileSyncBridge(): null {
 
 async function consumeMobileEventStream(
   url: string,
-  accessToken: string,
+  authorization: string,
   signal: AbortSignal,
   onEvent: (event: MobileStreamEvent) => void,
 ): Promise<void> {
   const response = await fetch(url, {
-    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${accessToken}` },
+    headers: { Accept: 'text/event-stream', Authorization: authorization },
     signal,
   })
   if (!response.ok || response.body === null) throw new Error(`移动同步连接失败（HTTP ${response.status}）。`)

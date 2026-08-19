@@ -86,14 +86,22 @@ export function hasWorkspaceData(workspaces: readonly MobileWorkspace[]): boolea
   return workspaces.length > 0
 }
 
+/** Reports whether one desktop session has a top-level row in the selected browser view. */
+export function sessionVisible(session: SessionSummary, currentSessionId: string | undefined): boolean {
+  return session.origin !== 'subagent' && (session.blank !== true || session.sessionId === currentSessionId)
+}
+
 /** Builds desktop-consistent workspace and ungrouped rows from authoritative workspace membership. */
 export function sessionRows(
   items: readonly SessionSummary[],
   workspaces: readonly MobileWorkspace[],
   groupBy: 'workspace' | 'flat',
+  currentSessionId?: string,
 ): Exclude<SessionDrawerRow, { kind: 'overflow' }>[] {
   if (groupBy === 'flat')
-    return items.map(session => ({ kind: 'session', key: `session:${session.sessionId}`, session }))
+    return items
+      .filter(session => sessionVisible(session, currentSessionId))
+      .map(session => ({ kind: 'session', key: `session:${session.sessionId}`, session }))
 
   const byId = new Map(items.map(session => [session.sessionId, session]))
   const accounted = new Set<string>()
@@ -103,13 +111,15 @@ export function sessionRows(
     for (const sessionId of workspace.sessionIds) {
       accounted.add(sessionId)
       const session = byId.get(sessionId)
-      if (session !== undefined) sessions.push(session)
+      if (session !== undefined && sessionVisible(session, currentSessionId)) sessions.push(session)
     }
     rows.push({ kind: 'workspace', key: `workspace:${workspace.workspaceId}`, label: workspaceLabel(workspace), workspace })
     rows.push(...sessions.map(session => ({ kind: 'session' as const, key: `session:${session.sessionId}`, session })))
   }
 
-  const ungrouped = items.filter(session => !accounted.has(session.sessionId)).sort((a, b) => sessionUpdatedAt(b) - sessionUpdatedAt(a))
+  const ungrouped = items
+    .filter(session => !accounted.has(session.sessionId) && sessionVisible(session, currentSessionId))
+    .sort((a, b) => sessionUpdatedAt(b) - sessionUpdatedAt(a))
   if (ungrouped.length > 0) {
     rows.push({ kind: 'workspace', key: 'workspace:ungrouped', label: '未分组' })
     rows.push(...ungrouped.map(session => ({ kind: 'session' as const, key: `session:${session.sessionId}`, session })))

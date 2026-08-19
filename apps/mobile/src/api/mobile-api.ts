@@ -84,6 +84,11 @@ export function mobileErrorMessage(error: unknown, fallback = '移动端请求�
   return fallback
 }
 
+/** Builds the device-bound bearer value required by every authenticated Mobile Gateway route. */
+export function mobileAuthorization(connection: Pick<MobileConnection, 'deviceId' | 'accessToken'>): string {
+  return `Bearer ${connection.deviceId}.${connection.accessToken}`
+}
+
 /** Exchanges a desktop-issued short-lived QR payload for one durable mobile device credential. */
 export async function redeemMobilePairing(payload: MobilePairingQrPayload): Promise<MobileConnection> {
   let gatewayUrl: string
@@ -358,7 +363,7 @@ export class MobileApi {
       response = await fetch(`${this.#connection.gatewayUrl}${path}`, {
         method: 'POST',
         headers: {
-          authorization: `Bearer ${this.#connection.deviceId}.${this.#connection.accessToken}`,
+          authorization: mobileAuthorization(this.#connection),
           'content-type': 'application/json',
         },
         body: JSON.stringify(body),

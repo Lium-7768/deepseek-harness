@@ -955,3 +955,77 @@ test('paired devices read durable images only through the session-authorized att
   assert.equal(calls[0]?.payload.method, 'session.attachment')
   assert.deepEqual(calls[0]?.payload.payload, { sessionId: 'session-a', attachmentId: 'image-a' })
 })
+
+
+test('session list projects desktop history titles and blank metadata for the native workspace tree', async t => {
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const reply = value => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } }))
+    }
+    if (request.url === '/api/session.list') {
+      reply({
+        items: [
+          { sessionId: 'blank-session', title: 'New Session' },
+          { sessionId: 'titled-session', title: 'New Session' },
+        ],
+      })
+      return
+    }
+    if (request.url === '/api/workspace.list') {
+      reply({
+        items: [{ workspaceId: 'workspace-1', title: 'Fixture workspace', sessionIds: ['blank-session', 'titled-session'] }],
+        archivedSessionIds: [],
+      })
+      return
+    }
+    if (request.url === '/api/session.history') {
+      const sessionId = message.payload.sessionId
+      reply({
+        events: sessionId === 'titled-session'
+          ? [{ event: { type: 'user/message', data: { role: 'user', content: '旧的首条用户文本' } } }]
+          : [],
+        projections: {
+          asOfSeq: 1,
+          values: sessionId === 'titled-session'
+            ? { title: '桌面投影标题', sessionListMetadata: { blank: false } }
+            : { title: null, sessionListMetadata: { blank: true } },
+        },
+      })
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Projection test phone')
+  const response = await fetch(`${status.url}/v1/sessions/list`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual((await response.json()).data.items, [
+    { sessionId: 'blank-session', title: 'New Session', blank: true },
+    { sessionId: 'titled-session', title: '桌面投影标题', blank: false },
+  ])
+})

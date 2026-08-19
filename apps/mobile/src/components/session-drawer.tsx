@@ -84,8 +84,8 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   )
   const workspaceDataAvailable = hasWorkspaceData(workspaces)
   const rows = useMemo<Exclude<SessionDrawerRow, { kind: 'overflow' }>[]>(
-    () => sessionRows(filteredSessions, workspaces, searchActive ? 'flat' : groupBy),
-    [groupBy, searchActive, filteredSessions, workspaces],
+    () => sessionRows(filteredSessions, workspaces, searchActive ? 'flat' : groupBy, currentSessionId),
+    [currentSessionId, groupBy, searchActive, filteredSessions, workspaces],
   )
   const visibleRows = useMemo(
     () => visibleWorkspaceRows(rows, collapsedWorkspaceKeys, expandedWorkspaceSessionKeys),

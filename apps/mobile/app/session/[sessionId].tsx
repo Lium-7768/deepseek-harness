@@ -36,7 +36,7 @@ import { isNearLatestMessage, shouldScrollToLatest } from '@/components/session-
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
-import type { MobilePromptContent } from '@/types/mobile'
+import type { MobilePromptContent, SessionEventsPayload } from '@/types/mobile'
 import {
   projectVisibleMessages,
   type SharedEventItem,
@@ -151,7 +151,19 @@ export default function SessionScreen(): React.JSX.Element {
       if (!client || !sessionId) throw new Error('请先连接桌面端并从会话列表打开会话。')
       return client.sendMessage(sessionId, content)
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] }),
+    onSuccess: () => {
+      queryClient.setQueryData<SessionEventsPayload>(['session-events', sessionId], current => ({
+        since: current?.since ?? 0,
+        items: current?.items ?? [],
+        status: 'running',
+      }))
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] }),
+        queryClient.invalidateQueries({ queryKey: ['session-events', sessionId] }),
+        queryClient.invalidateQueries({ queryKey: ['session-queue', sessionId] }),
+        queryClient.invalidateQueries({ queryKey: ['session-jobs', sessionId] }),
+      ])
+    },
     onError: (error, content) =>
       Alert.alert('消息发送失败', withErrorContext('消息未发送，请稍后重试', error), [
         { text: '关闭', style: 'cancel' },
