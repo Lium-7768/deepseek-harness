@@ -34,6 +34,8 @@ Gateway 集成测试覆盖已认证的内容搜索转发、在桌面调用前拒
 
 iPhone 17 Pro iOS 26.0 模拟器在 Expo prebuild 和 Pod 安装后构建成功，链接了 ExpoFileSystem 与 Expo Sharing 使用的 Expo 模块运行时。第一个预构建后的二进制使用了陈旧的 8097 Metro 端点；Debug 预处理器现在定义 `RCT_METRO_PORT=8090`，重新安装的应用从 8090 加载已连接工作区，没有原生或 JavaScript 异常。可用的桌面状态不包含带持久化图片或内容搜索结果的已选会话，因此填充后图像预览、系统分享面板、相机拍照和搜索结果的视觉断言仍需未来的实时会话检查。
 
+Android Debug 现在将 React Native 开发服务器和 Inspector 端口覆盖为 8090，与现有项目 Metro 服务保持一致，不影响 Release 变体或另一个占用 8081 的本地服务。Android 16 Debug APK 组装和流式 AVD 安装通过。Android 16 模拟器在干净重启前后均进入 System UI ANR，因此不能声称 Android 视觉运行时断言已完成；健康 AVD 或物理 Android 设备必须重新执行这一项检查。
+
 ## Consequences
 
 已配对移动客户端现在可以在不本地索引的情况下搜索桌面可见会话内容，预览和分享/保存仅当前会话已授权的图片，并通过相机或照片库附加可重试的压缩照片。该功能增加 Expo Sharing 和直接 Expo FileSystem 依赖及其生成的 iOS 注册。它刻意不暴露任意桌面文件、目录、产物浏览、文本/Diff 文件下载、完整离线搜索、无限分页或自动后台媒体同步。
