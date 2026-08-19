@@ -7,6 +7,10 @@ export type SessionOrder = 'manual' | 'updated'
 export type SessionDrawerRow =
   | { kind: 'workspace'; key: string; label: string; workspace?: MobileWorkspace }
   | { kind: 'session'; key: string; session: SessionSummary }
+  | { kind: 'overflow'; key: string; workspaceKey: string; hiddenCount: number; expanded: boolean }
+
+/** Maximum initial session rows shown by one expanded workspace, matching the desktop browser. */
+export const COLLAPSED_WORKSPACE_SESSION_LIMIT = 5
 
 /** Resolves the active session from a root or nested Expo Router route. */
 export function sessionIdFromRoute(route: { name: string; params?: unknown } | undefined): string | undefined {
@@ -65,6 +69,13 @@ export function formatSessionTime(updatedAt: unknown, now = Date.now()): string 
   return `${dateLabel} ${time}`
 }
 
+/** Resolves the desktop-compatible visible title for one session summary. */
+export function sessionDisplayTitle(session: Pick<SessionSummary, 'blank' | 'title'> | undefined): string {
+  if (session?.blank === true) return '新会话'
+  const title = session?.title?.trim()
+  return title === undefined || title === '' ? '新会话' : title
+}
+
 /** Returns the drawer's status label, prioritizing an active session over its timestamp. */
 export function sessionTimeLabel(session: Pick<SessionSummary, 'running' | 'updatedAt'>, now = Date.now()): string {
   return session.running === true ? '处理中' : formatSessionTime(session.updatedAt, now)
@@ -80,13 +91,13 @@ export function sessionRows(
   items: readonly SessionSummary[],
   workspaces: readonly MobileWorkspace[],
   groupBy: 'workspace' | 'flat',
-): SessionDrawerRow[] {
+): Exclude<SessionDrawerRow, { kind: 'overflow' }>[] {
   if (groupBy === 'flat')
     return items.map(session => ({ kind: 'session', key: `session:${session.sessionId}`, session }))
 
   const byId = new Map(items.map(session => [session.sessionId, session]))
   const accounted = new Set<string>()
-  const rows: SessionDrawerRow[] = []
+  const rows: Exclude<SessionDrawerRow, { kind: 'overflow' }>[] = []
   for (const workspace of workspaces) {
     const sessions: SessionSummary[] = []
     for (const sessionId of workspace.sessionIds) {
@@ -98,29 +109,55 @@ export function sessionRows(
     rows.push(...sessions.map(session => ({ kind: 'session' as const, key: `session:${session.sessionId}`, session })))
   }
 
-  const ungrouped = items.filter(session => !accounted.has(session.sessionId))
-  if (workspaces.length > 0 || ungrouped.length > 0) {
+  const ungrouped = items.filter(session => !accounted.has(session.sessionId)).sort((a, b) => sessionUpdatedAt(b) - sessionUpdatedAt(a))
+  if (ungrouped.length > 0) {
     rows.push({ kind: 'workspace', key: 'workspace:ungrouped', label: '未分组' })
     rows.push(...ungrouped.map(session => ({ kind: 'session' as const, key: `session:${session.sessionId}`, session })))
   }
   return rows
 }
 
-/** Keeps every workspace node visible while hiding child sessions of collapsed workspace keys. */
+/**
+ * Keeps all workspace nodes visible while applying desktop-compatible expansion
+ * and the per-workspace five-session overflow rule to their child rows.
+ */
 export function visibleWorkspaceRows(
-  rows: readonly SessionDrawerRow[],
+  rows: readonly Exclude<SessionDrawerRow, { kind: 'overflow' }>[],
   collapsedWorkspaceKeys: ReadonlySet<string>,
+  expandedWorkspaceSessionKeys: ReadonlySet<string>,
 ): SessionDrawerRow[] {
-  let workspaceKey: string | undefined
   const visible: SessionDrawerRow[] = []
+  let workspace: Extract<SessionDrawerRow, { kind: 'workspace' }> | undefined
+  let sessions: Extract<SessionDrawerRow, { kind: 'session' }>[] = []
+
+  const flushWorkspace = (): void => {
+    if (workspace === undefined) return
+    visible.push(workspace)
+    if (!collapsedWorkspaceKeys.has(workspace.key)) {
+      const expanded = expandedWorkspaceSessionKeys.has(workspace.key)
+      visible.push(...(expanded ? sessions : sessions.slice(0, COLLAPSED_WORKSPACE_SESSION_LIMIT)))
+      if (sessions.length > COLLAPSED_WORKSPACE_SESSION_LIMIT) {
+        visible.push({
+          kind: 'overflow',
+          key: `overflow:${workspace.key}`,
+          workspaceKey: workspace.key,
+          hiddenCount: sessions.length - COLLAPSED_WORKSPACE_SESSION_LIMIT,
+          expanded,
+        })
+      }
+    }
+    sessions = []
+  }
+
   for (const row of rows) {
     if (row.kind === 'workspace') {
-      workspaceKey = row.key
-      visible.push(row)
-      continue
+      flushWorkspace()
+      workspace = row
+    } else {
+      sessions.push(row)
     }
-    if (workspaceKey === undefined || !collapsedWorkspaceKeys.has(workspaceKey)) visible.push(row)
   }
+  flushWorkspace()
   return visible
 }
 

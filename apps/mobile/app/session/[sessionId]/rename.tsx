@@ -27,8 +27,7 @@ export default function RenameSessionScreen(): React.JSX.Element {
       return client.renameSession(sessionId, normalized)
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] })
-      await queryClient.invalidateQueries({ queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId] })
+      await queryClient.invalidateQueries({ queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId] })
       router.back()
     },
     onError: error => Alert.alert('重命名失败', mobileErrorMessage(error, '请稍后重试。')),

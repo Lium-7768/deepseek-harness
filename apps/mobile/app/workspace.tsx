@@ -5,7 +5,7 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeIcon } from '@/components/native-icon'
-import { selectedSessionTarget } from '@/components/session-drawer-logic'
+import { selectedSessionTarget, sessionDisplayTitle } from '@/components/session-drawer-logic'
 import { NativeBrandMark } from '@/components/native-brand-mark'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
@@ -23,7 +23,7 @@ export default function WorkspaceScreen(): React.JSX.Element {
   const selectSessionId = useSessionSelectionStore(state => state.selectSession)
   const clearSelection = useSessionSelectionStore(state => state.clearSelection)
   const sessions = useQuery({
-    queryKey: ['workspace-sessions', connection?.gatewayUrl, connection?.deviceId],
+    queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
     queryFn: () => new MobileApi(requireConnection(connection)).listSessions(),
   })
@@ -72,14 +72,14 @@ export default function WorkspaceScreen(): React.JSX.Element {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={
-                selectedSession === undefined ? '选择会话' : `当前会话：${selectedSession.title ?? '新会话'}`
+                selectedSession === undefined ? '选择会话' : `当前会话：${sessionDisplayTitle(selectedSession)}`
               }
               onPress={() => navigation.openDrawer()}
               style={({ pressed }) => [s.control, pressed && s.pressed]}
             >
               <NativeIcon name="chat-bubble-outline" size={16} color={mobileTheme.colors.inkMuted} />
               <Text numberOfLines={1} style={s.controlText}>
-                {selectedSession?.title ?? '选择会话'}
+                {selectedSession === undefined ? '选择会话' : sessionDisplayTitle(selectedSession)}
               </Text>
               <NativeIcon name="expand-more" size={18} color={mobileTheme.colors.inkMuted} />
             </Pressable>

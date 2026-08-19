@@ -6,6 +6,8 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   Pressable,
   StyleSheet,
@@ -29,6 +31,8 @@ import { ContextRows, TrajectoryPanel, WorkbenchTabs, type WorkbenchTab } from '
 import { readPermissionSelect } from '@/components/session-composer-logic'
 import { messageActionLayout, type MessageActionAlignment } from '@/components/session-message-logic'
 import { sessionStatisticsLine } from '@/components/session-stats-logic'
+import { sessionDisplayTitle } from '@/components/session-drawer-logic'
+import { isNearLatestMessage, shouldScrollToLatest } from '@/components/session-scroll-logic'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
@@ -51,7 +55,8 @@ export default function SessionScreen(): React.JSX.Element {
   const queryClient = useQueryClient()
   const listRef = useRef<FlatList<SharedMessagePresentation>>(null)
   const submittedDraft = useRef<string | undefined>(undefined)
-  const hasScrolledToLatest = useRef(false)
+  const initialLatestPositionPending = useRef(true)
+  const nearLatestMessage = useRef(true)
   const [liveItems, setLiveItems] = useState<SharedEventItem[]>([])
   const [olderItems, setOlderItems] = useState<SharedEventItem[]>([])
   const [olderHasMore, setOlderHasMore] = useState<boolean | undefined>()
@@ -107,13 +112,18 @@ export default function SessionScreen(): React.JSX.Element {
     },
   })
   const sessionList = useQuery({
-    queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId],
+    queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
     queryFn: () => {
       if (!client) throw new Error('请先连接桌面端。')
       return client.listSessions()
     },
   })
+  const activeSession = useMemo(
+    () => sessionList.data?.items.find(item => item.sessionId === sessionId),
+    [sessionId, sessionList.data?.items],
+  )
+  const sessionTitle = sessionDisplayTitle(activeSession)
   const models = useQuery({
     queryKey: ['session-models', connection?.gatewayUrl, connection?.deviceId, sessionId],
     enabled: ready,
@@ -190,7 +200,8 @@ export default function SessionScreen(): React.JSX.Element {
 
   useEffect(() => {
     submittedDraft.current = undefined
-    hasScrolledToLatest.current = false
+    initialLatestPositionPending.current = true
+    nearLatestMessage.current = true
     setLiveItems([])
     setOlderItems([])
     setOlderHasMore(undefined)
@@ -202,6 +213,12 @@ export default function SessionScreen(): React.JSX.Element {
     submittedDraft.current = value
     sendMessage.current([{ type: 'text', text: value }])
   }, [client, draft, sessionId])
+
+  useEffect(() => {
+    if (tab !== 'chat') return
+    initialLatestPositionPending.current = true
+    nearLatestMessage.current = true
+  }, [tab])
 
   useEffect(() => {
     const incoming = events.data?.items ?? []
@@ -218,6 +235,12 @@ export default function SessionScreen(): React.JSX.Element {
     () => new Map(sourceItems.flatMap(item => (typeof item.seq === 'number' ? [[item.seq, item.event] as const] : []))),
     [sourceItems],
   )
+  useEffect(() => {
+    if (tab !== 'chat' || messages.length === 0 || !initialLatestPositionPending.current) return
+    const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 0)
+    return () => clearTimeout(timer)
+  }, [messages.length, tab])
+
   const hasMoreHistory = olderHasMore ?? history.data?.hasMore ?? false
   const actions = interactions.data?.items.length ?? 0
   const goal = goalFromProjection(history.data?.projections?.values)
@@ -225,7 +248,7 @@ export default function SessionScreen(): React.JSX.Element {
   const displayStatus = connection ? status : 'disconnected'
 
   return (
-    <WorkspaceShell title="会话" rightAction={<ConnectionStatus status={displayStatus} />}>
+    <WorkspaceShell title={sessionTitle} rightAction={<ConnectionStatus status={displayStatus} />}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? workspaceKeyboardVerticalOffset(insets.top, false) : 0}
@@ -331,11 +354,25 @@ export default function SessionScreen(): React.JSX.Element {
                 )
               }
               onContentSizeChange={() => {
-                if (!hasScrolledToLatest.current && messages.length > 0) {
-                  hasScrolledToLatest.current = true
-                  listRef.current?.scrollToEnd({ animated: false })
+                const initialPositionPending = initialLatestPositionPending.current
+                if (
+                  shouldScrollToLatest({
+                    hasMessages: messages.length > 0,
+                    initialPositionPending,
+                    nearLatest: nearLatestMessage.current,
+                  })
+                ) {
+                  listRef.current?.scrollToEnd({ animated: !initialPositionPending })
+                  if (initialPositionPending) initialLatestPositionPending.current = false
                 }
               }}
+              onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+                const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
+                const nearLatest = isNearLatestMessage(contentSize.height, layoutMeasurement.height, contentOffset.y)
+                nearLatestMessage.current = nearLatest
+                if (!nearLatest) initialLatestPositionPending.current = false
+              }}
+              scrollEventThrottle={16}
             />
             {tab === 'chat' ? (
               <LocalizedSessionStats items={sourceItems} projectionValues={history.data?.projections?.values} />
@@ -346,7 +383,7 @@ export default function SessionScreen(): React.JSX.Element {
               running={status === 'running'}
             />
             <WorkspaceComposer
-              agentPreset={sessionList.data?.items.find(item => item.sessionId === sessionId)?.agentPreset}
+              agentPreset={activeSession?.agentPreset}
               model={models.data?.current}
               placeholder="在这里输入消息…"
               onSend={content => send.mutateAsync(content).then(() => undefined)}

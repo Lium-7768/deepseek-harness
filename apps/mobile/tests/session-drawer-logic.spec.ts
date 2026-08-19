@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COLLAPSED_WORKSPACE_SESSION_LIMIT,
   drawerWidthForViewport,
   formatSessionTime,
   hasWorkspaceData,
   selectedSessionTarget,
+  sessionDisplayTitle,
   sessionIdFromRoute,
   sessionRows,
   sessionTimeLabel,
@@ -17,6 +19,9 @@ const session = (sessionId: string, updatedAt: number, extra: Record<string, unk
   updatedAt,
   ...extra,
 })
+
+const rowLabel = (row: ReturnType<typeof visibleWorkspaceRows>[number]): string =>
+  row.kind === 'workspace' ? row.label : row.kind === 'overflow' ? `overflow:${row.hiddenCount}` : row.session.sessionId
 
 describe('session drawer logic', () => {
   it('keeps the mobile drawer at the visual parity width without exceeding its cap', () => {
@@ -61,9 +66,7 @@ describe('session drawer logic', () => {
     ]
     expect(hasWorkspaceData(workspaces)).toBe(true)
     expect(
-      sessionRows(items, workspaces, 'workspace').map(row =>
-        row.kind === 'workspace' ? row.label : row.session.sessionId,
-      ),
+      sessionRows(items, workspaces, 'workspace').map(row => row.kind === 'workspace' ? row.label : row.session.sessionId),
     ).toEqual(['项目一', 'b', 'a', '项目二', '未分组', 'c'])
   })
 
@@ -73,14 +76,42 @@ describe('session drawer logic', () => {
       [{ workspaceId: 'w1', title: '项目一', sessionIds: ['a', 'b'] }],
       'workspace',
     )
-    expect(
-      visibleWorkspaceRows(rows, new Set(['workspace:w1'])).map(row =>
-        row.kind === 'workspace' ? row.label : row.session.sessionId,
-      ),
-    ).toEqual(['项目一', '未分组', 'c'])
-    expect(
-      visibleWorkspaceRows(rows, new Set()).map(row => (row.kind === 'workspace' ? row.label : row.session.sessionId)),
-    ).toEqual(['项目一', 'a', 'b', '未分组', 'c'])
+    expect(visibleWorkspaceRows(rows, new Set(['workspace:w1']), new Set()).map(rowLabel)).toEqual(['项目一', '未分组', 'c'])
+    expect(visibleWorkspaceRows(rows, new Set(), new Set()).map(rowLabel)).toEqual(['项目一', 'a', 'b', '未分组', 'c'])
+  })
+
+  it('uses the desktop title and localizes only blank or empty titles as new sessions', () => {
+    expect(sessionDisplayTitle({ ...session('named', 1), title: '  桌面标题  ' })).toBe('桌面标题')
+    expect(sessionDisplayTitle({ ...session('blank', 1), blank: true })).toBe('新会话')
+    expect(sessionDisplayTitle({ ...session('empty', 1), title: '   ' })).toBe('新会话')
+  })
+
+  it('limits overflow per workspace without hiding a later desktop workspace', () => {
+    const projectSessions = Array.from({ length: COLLAPSED_WORKSPACE_SESSION_LIMIT + 1 }, (_, index) =>
+      session(`project-${index + 1}`, index),
+    )
+    const later = session('later', 99)
+    const rows = sessionRows(
+      [...projectSessions, later],
+      [
+        { workspaceId: 'project', title: '项目', sessionIds: projectSessions.map(item => item.sessionId) },
+        { workspaceId: 'later-workspace', title: '后续工作区', sessionIds: ['later'] },
+      ],
+      'workspace',
+    )
+
+    expect(visibleWorkspaceRows(rows, new Set(), new Set()).map(rowLabel)).toEqual([
+      '项目',
+      'project-1',
+      'project-2',
+      'project-3',
+      'project-4',
+      'project-5',
+      'overflow:1',
+      '后续工作区',
+      'later',
+    ])
+    expect(visibleWorkspaceRows(rows, new Set(), new Set(['workspace:project'])).map(rowLabel)).toContain('project-6')
   })
 
   it('renders all sessions beneath ungrouped when the desktop has no registered workspace', () => {

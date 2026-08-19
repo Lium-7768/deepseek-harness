@@ -30,11 +30,7 @@ export default function RenameWorkspaceScreen(): React.JSX.Element {
       return client.renameWorkspace(workspaceId, normalized)
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] }),
-        queryClient.invalidateQueries({ queryKey: ['workspace-sessions', connection?.gatewayUrl, connection?.deviceId] }),
-        queryClient.invalidateQueries({ queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId] })
       router.back()
     },
     onError: error => Alert.alert('重命名失败', mobileErrorMessage(error, '请稍后重试。')),

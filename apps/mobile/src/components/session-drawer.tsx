@@ -10,6 +10,7 @@ import { NativeIcon } from '@/components/native-icon'
 import { NativeListRow } from '@/components/native-list'
 import {
   hasWorkspaceData,
+  sessionDisplayTitle,
   sessionIdFromRoute,
   sessionRows,
   sessionTimeLabel,
@@ -37,18 +38,18 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedText(search.trim(), 250)
-  const [showAll, setShowAll] = useState(false)
   const [expandedViewSection, setExpandedViewSection] = useState<'group' | 'sort' | undefined>()
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [groupBy, setGroupBy] = useState<'workspace' | 'flat'>('workspace')
   const [collapsedWorkspaceKeys, setCollapsedWorkspaceKeys] = useState<Set<string>>(() => new Set())
+  const [expandedWorkspaceSessionKeys, setExpandedWorkspaceSessionKeys] = useState<Set<string>>(() => new Set())
   const [expandedSessionId, setExpandedSessionId] = useState<string | undefined>()
   const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<string | undefined>()
   const connection = useConnectionStore(value => value.connection)
   const selectSession = useSessionSelectionStore(value => value.selectSession)
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId],
+    queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
     queryFn: () => new MobileApi(requireConnection(connection)).listSessions(),
   })
@@ -82,13 +83,14 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
     [searchActive, searchedSessions, sessions],
   )
   const workspaceDataAvailable = hasWorkspaceData(workspaces)
-  const visibleSessions = searchActive || showAll ? filteredSessions : filteredSessions.slice(0, 5)
-  const remaining = Math.max(0, filteredSessions.length - visibleSessions.length)
-  const rows = useMemo<SessionDrawerRow[]>(
-    () => sessionRows(visibleSessions, workspaces, searchActive ? 'flat' : groupBy),
-    [groupBy, searchActive, visibleSessions, workspaces],
+  const rows = useMemo<Exclude<SessionDrawerRow, { kind: 'overflow' }>[]>(
+    () => sessionRows(filteredSessions, workspaces, searchActive ? 'flat' : groupBy),
+    [groupBy, searchActive, filteredSessions, workspaces],
   )
-  const visibleRows = useMemo(() => visibleWorkspaceRows(rows, collapsedWorkspaceKeys), [collapsedWorkspaceKeys, rows])
+  const visibleRows = useMemo(
+    () => visibleWorkspaceRows(rows, collapsedWorkspaceKeys, expandedWorkspaceSessionKeys),
+    [collapsedWorkspaceKeys, expandedWorkspaceSessionKeys, rows],
+  )
 
   const closeDrawer = (): void => navigation.closeDrawer()
   const openSession = (sessionId: string): void => {
@@ -107,11 +109,16 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
       else next.add(workspaceKey)
       return next
     })
+  const toggleWorkspaceSessions = (workspaceKey: string): void =>
+    setExpandedWorkspaceSessionKeys((current) => {
+      const next = new Set(current)
+      if (next.has(workspaceKey)) next.delete(workspaceKey)
+      else next.add(workspaceKey)
+      return next
+    })
   const refreshSessions = async (): Promise<void> => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['sessions', connection?.gatewayUrl, connection?.deviceId] }),
-      queryClient.invalidateQueries({ queryKey: ['workspace-sessions', connection?.gatewayUrl, connection?.deviceId] }),
-      queryClient.invalidateQueries({ queryKey: ['session-list-for-session', connection?.gatewayUrl, connection?.deviceId] }),
+      queryClient.invalidateQueries({ queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId] }),
     ])
   }
   const createSession = async (): Promise<void> => {
@@ -399,6 +406,22 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                         </View>
                       ) : null}
                     </View>
+                  ) : item.kind === 'overflow' ? (
+                    <Pressable
+                      key={item.key}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.expanded ? '收起会话' : `展开其余 ${item.hiddenCount} 个会话`}
+                      accessibilityState={{ expanded: item.expanded }}
+                      onPress={() => toggleWorkspaceSessions(item.workspaceKey)}
+                      style={({ pressed }) => [styles.expandButton, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.expandText}>{item.expanded ? '收起' : `展开其余 ${item.hiddenCount} 个会话`}</Text>
+                      <NativeIcon
+                        name={item.expanded ? 'expand-less' : 'expand-more'}
+                        size={18}
+                        color={mobileTheme.colors.inkMuted}
+                      />
+                    </Pressable>
                   ) : (
                     <View key={item.key}>
                       <SessionItem
@@ -440,21 +463,6 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                 )
               )}
               {searchActive && contentSearch.data?.hasMore ? <Text style={styles.searchHint}>结果较多，请使用更具体的关键词。</Text> : null}
-              {!searchActive && (remaining > 0 || showAll) ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={showAll ? '收起会话' : `展开其余 ${remaining} 个会话`}
-                  onPress={() => setShowAll(value => !value)}
-                  style={({ pressed }) => [styles.expandButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.expandText}>{showAll ? '收起' : `展开其余 ${remaining} 个会话`}</Text>
-                  <NativeIcon
-                    name={showAll ? 'expand-less' : 'expand-more'}
-                    size={18}
-                    color={mobileTheme.colors.inkMuted}
-                  />
-                </Pressable>
-              ) : null}
             </View>
           </View>
         </DrawerContentScrollView>
@@ -520,7 +528,7 @@ function SessionItem({
   onPress: () => void
   onLongPress: () => void
 }): React.JSX.Element {
-  const title = typeof session.title === 'string' && session.title.trim() ? session.title : '新会话'
+  const title = sessionDisplayTitle(session)
   const time = sessionTimeLabel(session)
   const snippet = typeof session.searchSnippet === 'string' ? session.searchSnippet : undefined
   return (
