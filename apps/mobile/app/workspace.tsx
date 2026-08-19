@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { router, useNavigation } from 'expo-router'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeIcon } from '@/components/native-icon'
-import { selectedSessionTarget, sessionDisplayTitle } from '@/components/session-drawer-logic'
-import { NativeBrandMark } from '@/components/native-brand-mark'
+import { selectedSessionTarget, sessionDisplayTitle, sessionTimeLabel } from '@/components/session-drawer-logic'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
@@ -22,6 +21,8 @@ export default function WorkspaceScreen(): React.JSX.Element {
   const selectedSessionId = useSessionSelectionStore(state => state.selectedSessionId)
   const selectSessionId = useSessionSelectionStore(state => state.selectSession)
   const clearSelection = useSessionSelectionStore(state => state.clearSelection)
+  const restoreSelection = useSessionSelectionStore(state => state.restoreSelection)
+  const restoredConnectionKey = useRef<string | undefined>(undefined)
   const sessions = useQuery({
     queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
@@ -29,10 +30,29 @@ export default function WorkspaceScreen(): React.JSX.Element {
   })
   const selectedSession = selectedSessionTarget(sessions.data?.items ?? [], selectedSessionId)
   useEffect(() => {
-    if (!connection) clearSelection()
+    if (connection === undefined) {
+      restoredConnectionKey.current = undefined
+      void clearSelection()
+    }
   }, [clearSelection, connection])
+  useEffect(() => {
+    if (connection === undefined || sessions.data === undefined) return
+    const connectionKey = `${connection.gatewayUrl}:${connection.deviceId}`
+    if (restoredConnectionKey.current === connectionKey) return
+    restoredConnectionKey.current = connectionKey
+    void restoreSelection(
+      connection,
+      sessions.data.items.map(item => item.sessionId),
+    )
+  }, [connection, restoreSelection, sessions.data])
+  useEffect(() => {
+    if (connection !== undefined && sessions.data !== undefined && selectedSessionId !== undefined && selectedSession === undefined) {
+      void clearSelection()
+    }
+  }, [clearSelection, connection, selectedSession, selectedSessionId, sessions.data])
   const selectSession = (sessionId: string): void => {
-    selectSessionId(sessionId)
+    if (connection === undefined) return
+    void selectSessionId(connection, sessionId)
     router.push({ pathname: '/session/[sessionId]', params: { sessionId } })
   }
   const send = async (content: MobilePromptContent): Promise<void> => {
@@ -60,14 +80,8 @@ export default function WorkspaceScreen(): React.JSX.Element {
         keyboardVerticalOffset={Platform.OS === 'ios' ? workspaceKeyboardVerticalOffset(insets.top, true) : 0}
         style={s.canvas}
       >
-        <View style={s.hero}>
-          <View style={s.titleRow}>
-            <NativeBrandMark size={30} />
-            <Text style={s.title}>探索未至之境</Text>
-            <View style={s.badge}>
-              <Text style={s.badgeText}>预览版</Text>
-            </View>
-          </View>
+        <View style={s.summary}>
+          <Text style={s.summaryLabel}>{selectedSession === undefined ? '选择桌面会话' : '当前会话'}</Text>
           <View style={s.controls}>
             <Pressable
               accessibilityRole="button"
@@ -90,10 +104,14 @@ export default function WorkspaceScreen(): React.JSX.Element {
               style={s.disabledControl}
             >
               <NativeIcon name="tune" size={16} color={mobileTheme.colors.inkMuted} />
-              <Text style={s.controlText}>标准模式（仅支持）</Text>
+              <Text numberOfLines={1} style={s.controlText}>
+                标准模式
+              </Text>
             </View>
           </View>
-          <Text style={s.detail}>{workspaceDetail(connection, sessions, selectedSession !== undefined)}</Text>
+          <Text style={s.detail}>
+            {workspaceDetail(connection, sessions, selectedSession === undefined ? undefined : sessionTimeLabel(selectedSession))}
+          </Text>
         </View>
         <WorkspaceComposer
           agentPreset={selectedSession?.agentPreset}
@@ -123,14 +141,14 @@ function requireConnection(connection: ReturnType<typeof useConnectionStore.getS
 function workspaceDetail(
   connection: ReturnType<typeof useConnectionStore.getState>['connection'],
   sessions: ReturnType<typeof useQuery<Awaited<ReturnType<MobileApi['listSessions']>>>>,
-  hasSelectedSession: boolean,
+  selectedTime: string | undefined,
 ): string {
   if (!connection) return '请先连接桌面端。'
   if (sessions.isPending) return '正在加载桌面工作区…'
   if (sessions.isError) return `桌面工作区加载失败：${errorMessage(sessions.error)}`
   const count = sessions.data?.items.length ?? 0
   if (count === 0) return '桌面端暂无会话，请在桌面端创建会话。'
-  return hasSelectedSession ? `已连接桌面端 · ${count} 个会话` : `已连接桌面端 · ${count} 个会话，请先选择会话。`
+  return selectedTime === undefined ? `已连接桌面端 · ${count} 个会话` : `最近更新 · ${selectedTime}`
 }
 
 function errorMessage(error: unknown): string {
@@ -139,45 +157,19 @@ function errorMessage(error: unknown): string {
 
 const s = StyleSheet.create({
   canvas: { flex: 1, justifyContent: 'space-between' },
-  hero: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: mobileTheme.spacing.lg,
-  },
-  titleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: mobileTheme.spacing.sm,
-    justifyContent: 'center',
-  },
-  title: { color: mobileTheme.colors.ink, fontSize: 26, fontWeight: '500' },
-  badge: {
-    backgroundColor: mobileTheme.colors.accentSoft,
-    borderColor: '#c9d9fb',
-    borderRadius: 5,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  badgeText: { color: mobileTheme.colors.accentText, fontSize: 12, fontWeight: '600' },
-  controls: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: mobileTheme.spacing.sm,
-    justifyContent: 'center',
-    marginTop: mobileTheme.spacing.lg,
-  },
+  summary: { gap: mobileTheme.spacing.sm, paddingHorizontal: mobileTheme.spacing.lg, paddingTop: mobileTheme.spacing.lg },
+  summaryLabel: { color: mobileTheme.colors.inkMuted, fontSize: 12, fontWeight: '700' },
+  controls: { alignItems: 'center', flexDirection: 'row', gap: mobileTheme.spacing.sm },
   control: {
     alignItems: 'center',
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
-    borderRadius: mobileTheme.radius.pill,
-    borderWidth: 0,
+    backgroundColor: mobileTheme.colors.surface,
+    borderColor: mobileTheme.colors.border,
+    borderRadius: mobileTheme.radius.control,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
     flexDirection: 'row',
     gap: 7,
-    height: 32,
+    minHeight: mobileTheme.touch.minTarget,
     paddingHorizontal: 11,
   },
   disabledControl: {
@@ -185,20 +177,15 @@ const s = StyleSheet.create({
     backgroundColor: mobileTheme.colors.surfaceMuted,
     borderColor: mobileTheme.colors.border,
     borderRadius: mobileTheme.radius.control,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 7,
-    height: 32,
+    minHeight: mobileTheme.touch.minTarget,
     opacity: 0.72,
     paddingHorizontal: 11,
   },
-  controlText: { color: mobileTheme.colors.ink, fontSize: 13, fontWeight: '500', maxWidth: 190 },
-  detail: {
-    color: mobileTheme.colors.inkMuted,
-    fontSize: 12,
-    marginTop: mobileTheme.spacing.md,
-    textAlign: 'center',
-  },
+  controlText: { color: mobileTheme.colors.ink, flexShrink: 1, fontSize: 13, fontWeight: '500' },
+  detail: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 18 },
   status: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   dot: { backgroundColor: mobileTheme.colors.success, borderRadius: 4, height: 7, width: 7 },
   offline: { backgroundColor: mobileTheme.colors.inkFaint },

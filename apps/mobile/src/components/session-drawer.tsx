@@ -95,7 +95,7 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
   const closeDrawer = (): void => navigation.closeDrawer()
   const openSession = (sessionId: string): void => {
     closeDrawer()
-    selectSession(sessionId)
+    if (connection !== undefined) void selectSession(connection, sessionId)
     if (sessionId !== currentSessionId) router.push({ pathname: '/session/[sessionId]', params: { sessionId } })
   }
   const openSettings = (): void => {
