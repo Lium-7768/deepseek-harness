@@ -108,6 +108,7 @@ export default function SessionModeScreen(): React.JSX.Element {
                   }
                   description={item.broken ?? item.description ?? (item.trust === 'system' ? '内置模式' : '自定义模式')}
                   disabled={disabled}
+                  multiline
                   preserveDisabledReadability={!blank && !sessions.isPending && !sessions.isError}
                   onPress={() => {
                     if (client === undefined || sessionId === undefined || submitting !== undefined) return

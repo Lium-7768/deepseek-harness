@@ -23,6 +23,7 @@ type NativeListRowProps = {
   onPress?: () => void
   accessibilityLabel?: string
   accessibilityRole?: AccessibilityRole
+  multiline?: boolean
 }
 
 export function NativeListRow({
@@ -36,24 +37,25 @@ export function NativeListRow({
   onPress,
   accessibilityLabel,
   accessibilityRole = 'button',
+  multiline = false,
 }: NativeListRowProps): React.JSX.Element {
   const subdued = disabled && !preserveDisabledReadability
   const content = (
     <>
-      <View style={styles.left}>
-        {left ? <View style={styles.leading}>{left}</View> : null}
+      <View style={[styles.left, multiline && styles.leftMultiline]}>
+        {left ? <View style={[styles.leading, multiline && styles.leadingMultiline]}>{left}</View> : null}
         <View style={styles.copy}>
-          <Text numberOfLines={1} style={[styles.title, subdued && styles.disabledText]}>
+          <Text numberOfLines={multiline ? undefined : 1} style={[styles.title, subdued && styles.disabledText]}>
             {title}
           </Text>
           {description ? (
-            <Text numberOfLines={2} style={[styles.description, subdued && styles.disabledText]}>
+            <Text numberOfLines={multiline ? undefined : 2} style={[styles.description, subdued && styles.disabledText]}>
               {description}
             </Text>
           ) : null}
         </View>
       </View>
-      {right ? <View style={styles.trailing}>{right}</View> : null}
+      {right ? <View style={[styles.trailing, multiline && styles.trailingMultiline]}>{right}</View> : null}
     </>
   )
   if (!onPress)
@@ -61,7 +63,7 @@ export function NativeListRow({
       <View
         accessibilityLabel={accessibilityLabel}
         accessibilityState={{ disabled, selected }}
-        style={[styles.row, selected && styles.selected, subdued && styles.disabled]}
+        style={[styles.row, multiline && styles.rowMultiline, selected && styles.selected, subdued && styles.disabled]}
       >
         {content}
       </View>
@@ -75,6 +77,7 @@ export function NativeListRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
+        multiline && styles.rowMultiline,
         selected && styles.selected,
         subdued && styles.disabled,
         pressed && styles.pressed,
@@ -108,12 +111,16 @@ const styles = StyleSheet.create({
     minHeight: mobileTheme.touch.minTarget,
     paddingHorizontal: mobileTheme.spacing.md,
   },
+  rowMultiline: { alignItems: 'flex-start', paddingVertical: mobileTheme.spacing.sm },
   left: { alignItems: 'center', flex: 1, flexDirection: 'row', minWidth: 0 },
+  leftMultiline: { alignItems: 'flex-start' },
   leading: { alignItems: 'center', justifyContent: 'center', marginRight: mobileTheme.spacing.sm, width: 24 },
+  leadingMultiline: { marginTop: 2 },
   copy: { flex: 1, gap: mobileTheme.spacing.xxs, minWidth: 0 },
   title: { color: mobileTheme.colors.ink, fontSize: mobileTheme.typography.body, fontWeight: '500' },
   description: { color: mobileTheme.colors.inkMuted, fontSize: mobileTheme.typography.caption, lineHeight: 17 },
   trailing: { alignItems: 'center', justifyContent: 'center', marginLeft: mobileTheme.spacing.sm },
+  trailingMultiline: { marginTop: 2 },
   selected: { backgroundColor: mobileTheme.colors.accentSoft },
   disabled: { opacity: 0.52 },
   disabledText: { color: mobileTheme.colors.inkFaint },

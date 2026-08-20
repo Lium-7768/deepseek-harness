@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useMemo, useState } from 'react'
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeActionButton } from '@/components/native-action-button'
+import { NativeIcon } from '@/components/native-icon'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
 import { useConnectionStore } from '@/state/connection'
@@ -37,7 +38,21 @@ export default function RenameWorkspaceScreen(): React.JSX.Element {
   })
 
   return (
-    <WorkspaceShell title="重命名工作区" showMenu={false}>
+    <WorkspaceShell
+      leftAction={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="返回工作区"
+          hitSlop={8}
+          onPress={() => router.back()}
+          style={styles.back}
+        >
+          <NativeIcon name="arrow-back" color={mobileTheme.colors.ink} size={20} />
+        </Pressable>
+      }
+      title="重命名工作区"
+      showMenu={false}
+    >
       <View style={[styles.canvas, { paddingTop: workspaceKeyboardVerticalOffset(insets.top, false) / 3 }]}>
         <Text style={styles.label}>工作区名称</Text>
         <TextInput
@@ -73,6 +88,7 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 }
 
 const styles = StyleSheet.create({
+  back: { alignItems: 'center', height: 36, justifyContent: 'center', width: 36 },
   canvas: { flex: 1, gap: mobileTheme.spacing.sm, padding: mobileTheme.spacing.lg },
   hint: { color: mobileTheme.colors.inkMuted, fontSize: 13, lineHeight: 19 },
   input: {

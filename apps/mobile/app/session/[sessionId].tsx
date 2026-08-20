@@ -596,7 +596,7 @@ function LocalizedSessionStats({
   const line = sessionStatisticsLine(projectionValues, items)
   return line === undefined ? null : (
     <View style={s.stats}>
-      <Text numberOfLines={1} style={s.statsText}>
+      <Text numberOfLines={2} style={s.statsText}>
         {line}
       </Text>
     </View>
@@ -678,7 +678,7 @@ const s = StyleSheet.create({
     paddingVertical: mobileTheme.spacing.lg,
   },
   empty: { color: mobileTheme.colors.inkMuted, paddingVertical: 24, textAlign: 'center' },
-  assistantRow: { gap: mobileTheme.spacing.lg, maxWidth: '100%' },
+  assistantRow: { gap: mobileTheme.spacing.lg, maxWidth: '100%', minWidth: 0, width: '100%' },
   userRow: { alignItems: 'flex-end', gap: mobileTheme.spacing.xs, maxWidth: '100%' },
   userBubble: {
     alignSelf: 'flex-end',
@@ -691,7 +691,7 @@ const s = StyleSheet.create({
   userText: { color: mobileTheme.colors.ink, fontSize: 16, lineHeight: 24 },
   toolRow: { maxWidth: '100%' },
   turnStatusSlot: { paddingHorizontal: mobileTheme.spacing.lg, paddingVertical: mobileTheme.spacing.xs },
-  stats: { paddingHorizontal: 14, paddingVertical: 4 },
+  stats: { paddingHorizontal: mobileTheme.spacing.lg, paddingVertical: mobileTheme.spacing.xs },
   statsText: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 20, textAlign: 'center' },
   status: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   statusDot: { backgroundColor: mobileTheme.colors.success, borderRadius: 4, height: 7, width: 7 },

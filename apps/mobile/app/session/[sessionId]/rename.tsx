@@ -1,24 +1,44 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
-import { useMemo, useState } from 'react'
-import { Alert, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeActionButton } from '@/components/native-action-button'
+import { NativeIcon } from '@/components/native-icon'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
 import { useConnectionStore } from '@/state/connection'
 import { mobileTheme } from '@/theme'
+import type { SessionListPayload } from '@/types/mobile'
 
 /** Renders the native title editor for one desktop-owned session. */
 export default function RenameSessionScreen(): React.JSX.Element {
-  const { sessionId: rawSessionId } = useLocalSearchParams<{ sessionId?: string | string[] }>()
+  const { sessionId: rawSessionId, title: rawTitle } = useLocalSearchParams<{
+    sessionId?: string | string[]
+    title?: string | string[]
+  }>()
   const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId
+  const routeTitle = Array.isArray(rawTitle) ? rawTitle[0] : rawTitle
   const connection = useConnectionStore(value => value.connection)
   const queryClient = useQueryClient()
   const insets = useSafeAreaInsets()
-  const [title, setTitle] = useState('')
+  const [title, setTitle] = useState(routeTitle ?? '')
   const client = useMemo(() => (connection ? new MobileApi(connection) : undefined), [connection])
+  const sessions = useQuery({
+    queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
+    enabled: client !== undefined,
+    queryFn: () => {
+      if (client === undefined) throw new Error('请先连接桌面端。')
+      return client.listSessions()
+    },
+    initialData: () =>
+      queryClient.getQueryData<SessionListPayload>(['session-list', connection?.gatewayUrl, connection?.deviceId]),
+  })
+  const currentTitle = sessions.data?.items.find(item => item.sessionId === sessionId)?.title
+  useEffect(() => {
+    if (title === '' && currentTitle !== undefined) setTitle(currentTitle)
+  }, [currentTitle, title])
   const rename = useMutation({
     mutationFn: async () => {
       const normalized = title.trim()
@@ -34,7 +54,21 @@ export default function RenameSessionScreen(): React.JSX.Element {
   })
 
   return (
-    <WorkspaceShell title="重命名会话" showMenu={false}>
+    <WorkspaceShell
+      leftAction={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="返回会话"
+          hitSlop={8}
+          onPress={() => router.back()}
+          style={styles.back}
+        >
+          <NativeIcon name="arrow-back" color={mobileTheme.colors.ink} size={20} />
+        </Pressable>
+      }
+      title="重命名会话"
+      showMenu={false}
+    >
       <View style={[styles.canvas, { paddingTop: workspaceKeyboardVerticalOffset(insets.top, false) / 3 }]}>
         <Text style={styles.label}>会话标题</Text>
         <TextInput
@@ -65,6 +99,7 @@ export default function RenameSessionScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  back: { alignItems: 'center', height: 36, justifyContent: 'center', width: 36 },
   canvas: { flex: 1, gap: mobileTheme.spacing.sm, padding: mobileTheme.spacing.lg },
   hint: { color: mobileTheme.colors.inkMuted, fontSize: 13, lineHeight: 19 },
   input: {

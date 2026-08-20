@@ -74,6 +74,10 @@ function parseBlocks(markdown: string): Block[] {
   flush()
   return blocks
 }
+function wrapInlineCode(text: string): string {
+  return text.replace(/([/_.:,;=?&-])/g, '$1\u200B')
+}
+
 function inline(text: string, key: string): React.JSX.Element[] {
   const re = /(\[[^\]]+\]\([^\)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g
   const out: React.JSX.Element[] = []
@@ -91,7 +95,7 @@ function inline(text: string, key: string): React.JSX.Element[] {
     else if (token.startsWith('`'))
       out.push(
         <Text key={`${key}-c-${match.index}`} style={styles.inlineCode}>
-          {token.slice(1, -1)}
+          {wrapInlineCode(token.slice(1, -1))}
         </Text>,
       )
     else if (token.startsWith('**') || token.startsWith('__'))
@@ -182,7 +186,7 @@ export function NativeMarkdown({
           return (
             <View key={key} style={styles.listRow}>
               <Text style={styles.marker}>{block.marker}</Text>
-              <Text style={styles.body}>{content}</Text>
+              <Text style={[styles.body, styles.listBody]}>{content}</Text>
             </View>
           )
         return (
@@ -248,7 +252,12 @@ function NativeCodeBlock({
 
 const styles = StyleSheet.create({
   root: { gap: mobileTheme.spacing.md },
-  body: { color: mobileTheme.colors.ink, fontSize: mobileTheme.typography.body, lineHeight: mobileTheme.typography.lineBody },
+  body: {
+    color: mobileTheme.colors.ink,
+    flexShrink: 1,
+    fontSize: mobileTheme.typography.body,
+    lineHeight: mobileTheme.typography.lineBody,
+  },
   heading: { color: mobileTheme.colors.ink, fontWeight: '800' },
   h1: { fontSize: 22, lineHeight: 28 },
   h2: { fontSize: 18, lineHeight: 24 },
@@ -265,7 +274,8 @@ const styles = StyleSheet.create({
   },
   quote: { borderLeftColor: mobileTheme.colors.accent, borderLeftWidth: 3, paddingLeft: 10 },
   quoteText: { color: mobileTheme.colors.inkMuted, fontStyle: 'italic', lineHeight: mobileTheme.typography.lineBody },
-  listRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
+  listRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8, width: '100%' },
+  listBody: { flex: 1, minWidth: 0 },
   marker: { color: mobileTheme.colors.accent, fontWeight: '800', lineHeight: mobileTheme.typography.lineBody, minWidth: 18 },
   codeCard: { backgroundColor: mobileTheme.colors.codeBackground, borderRadius: 10, gap: 8, padding: 11 },
   codeHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
@@ -276,7 +286,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: mobileTheme.touch.iconButton,
   },
-  codeText: { color: mobileTheme.colors.codeForeground, fontFamily: 'Menlo', fontSize: 13, lineHeight: 22 },
+  codeText: { color: mobileTheme.colors.codeForeground, flexShrink: 1, fontFamily: 'Menlo', fontSize: 13, lineHeight: 22, minWidth: 0 },
   codeToggle: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: mobileTheme.touch.minTarget },
   codeToggleText: { color: mobileTheme.colors.codeInteractive, fontSize: 12, fontWeight: '700' },
 })

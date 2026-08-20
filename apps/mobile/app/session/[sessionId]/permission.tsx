@@ -140,6 +140,7 @@ export default function SessionPermissionScreen(): React.JSX.Element {
               const disabled = locked || item.value === 'custom'
               return (
                 <NativeListRow
+                  key={item.value}
                   accessibilityLabel={
                     permissionLabel(item.value, item.name) +
                     (selected ? '，当前权限' : '') +
@@ -148,6 +149,7 @@ export default function SessionPermissionScreen(): React.JSX.Element {
                   accessibilityRole="radio"
                   description={item.description ?? permissionDescription(item.value)}
                   disabled={disabled}
+                  multiline
                   left={
                     <NativeIcon
                       name="admin-panel-settings"

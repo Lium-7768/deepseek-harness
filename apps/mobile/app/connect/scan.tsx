@@ -75,6 +75,9 @@ export default function ScanPairingScreen(): React.JSX.Element {
               style={styles.camera}
             />
             <View pointerEvents="none" style={styles.frame} />
+            <View pointerEvents="none" style={styles.scanHint}>
+              <Text style={styles.scanHintText}>将配对二维码放入框内</Text>
+            </View>
             {redeeming ? (
               <View style={styles.busy}>
                 <ActivityIndicator color="#ffffff" />
@@ -134,7 +137,28 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', flex: 1, justifyContent: 'center' },
   cameraCard: { aspectRatio: 1, borderColor: mobileTheme.colors.borderStrong, borderRadius: mobileTheme.radius.card, borderWidth: 1, overflow: 'hidden', position: 'relative' },
   camera: { flex: 1 },
-  frame: { borderColor: '#ffffff', borderRadius: 16, borderWidth: 2, height: '58%', left: '21%', position: 'absolute', top: '21%', width: '58%' },
+  frame: {
+    borderColor: mobileTheme.colors.accent,
+    borderRadius: mobileTheme.radius.control,
+    borderWidth: 2,
+    height: '58%',
+    left: '21%',
+    position: 'absolute',
+    top: '21%',
+    width: '58%',
+  },
+  scanHint: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    borderRadius: mobileTheme.radius.pill,
+    bottom: mobileTheme.spacing.lg,
+    left: mobileTheme.spacing.lg,
+    paddingHorizontal: mobileTheme.spacing.md,
+    paddingVertical: mobileTheme.spacing.xs,
+    position: 'absolute',
+    right: mobileTheme.spacing.lg,
+  },
+  scanHintText: { color: '#ffffff', fontSize: mobileTheme.typography.caption, fontWeight: '700' },
   busy: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.64)', bottom: 0, flexDirection: 'row', gap: mobileTheme.spacing.sm, justifyContent: 'center', left: 0, position: 'absolute', right: 0, top: 0 },
   busyText: { color: '#ffffff', fontSize: mobileTheme.typography.body, fontWeight: '700' },
   permissionCard: { alignItems: 'center', backgroundColor: mobileTheme.colors.surfaceRaised, borderColor: mobileTheme.colors.border, borderRadius: mobileTheme.radius.card, borderWidth: 1, gap: mobileTheme.spacing.sm, padding: mobileTheme.spacing.xl },

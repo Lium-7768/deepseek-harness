@@ -117,7 +117,7 @@ function ModelRow({
   return (
     <NativeListRow
       accessibilityLabel={model.name + (selected ? '，当前模型' : '') + (disabled ? '，不可用' : '')}
-      description={model.description ?? model.id}
+      description={modelSecondaryText(model)}
       disabled={disabled}
       onPress={() => {
         if (client === undefined || sessionId === undefined || submitting !== undefined) return
@@ -144,6 +144,13 @@ function ModelRow({
       title={model.name}
     />
   )
+}
+
+function modelSecondaryText(model: MobileModelCatalogModel): string | undefined {
+  const detail = model.description?.trim() || model.id
+  const normalizedDetail = detail.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  const normalizedName = model.name.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  return normalizedDetail === normalizedName ? undefined : detail
 }
 
 function StateView({

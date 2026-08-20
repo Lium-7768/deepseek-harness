@@ -452,8 +452,8 @@ function ConnectionCard({
         {connection?.gatewayUrl ?? '未连接'}
       </Text>
       <Text style={styles.label}>设备 ID</Text>
-      <Text selectable style={styles.value}>
-        {connection?.deviceId ?? '未连接'}
+      <Text accessibilityLabel={connection ? `设备 ID：${connection.deviceId}` : '设备 ID：未连接'} selectable style={styles.value}>
+        {connection ? compactDeviceId(connection.deviceId) : '未连接'}
       </Text>
       {connection ? (
         <NativeActionButton
@@ -475,6 +475,10 @@ function ConnectionCard({
       )}
     </View>
   )
+}
+
+function compactDeviceId(deviceId: string): string {
+  return deviceId.length <= 14 ? deviceId : `${deviceId.slice(0, 6)}…${deviceId.slice(-6)}`
 }
 
 function confirmFullAccess(onConfirm: () => void): void {

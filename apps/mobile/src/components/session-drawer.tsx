@@ -440,7 +440,10 @@ export function SessionDrawer(props: DrawerContentComponentProps): React.JSX.Ele
                             title="重命名"
                             accessibilityRole="button"
                             onPress={() =>
-                              router.push({ pathname: '/session/[sessionId]/rename', params: { sessionId: item.session.sessionId } })
+                              router.push({
+                                pathname: '/session/[sessionId]/rename',
+                                params: { sessionId: item.session.sessionId, title: item.session.title ?? '未命名会话' },
+                              })
                             }
                             right={<NativeIcon name="edit" size={18} color={mobileTheme.colors.inkMuted} />}
                           />
