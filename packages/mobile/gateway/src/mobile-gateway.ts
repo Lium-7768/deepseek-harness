@@ -44,7 +44,7 @@ type DshHistory = {
   hasMore?: boolean
   projections?: unknown
 }
-type DshSessionSummary = { sessionId: string; title?: string; [key: string]: unknown }
+type DshSessionSummary = { sessionId: string; title?: string; running?: boolean; [key: string]: unknown }
 type DshSessionList = { items?: DshSessionSummary[]; [key: string]: unknown }
 type DshWorkspace = { workspaceId: string; title?: string; path?: string; sessionIds?: string[] }
 type DshWorkspaceList = { items?: DshWorkspace[]; archivedSessionIds?: string[] }
@@ -444,11 +444,15 @@ export class MobileGateway {
     if (events !== null) {
       const since = typeof body.since === 'number' && Number.isInteger(body.since) && body.since >= 0 ? body.since : 0
       const sessionId = decodePathSegment(events)
-      const history = await this.#dsh.call<DshHistory>('session.history', { sessionId })
+      const [history, summary] = await Promise.all([
+        this.#dsh.call<DshHistory>('session.history', { sessionId }),
+        this.#dsh.call<DshSessionList>('session.list', {}),
+      ])
       const items = toMobileHistoryItems(history).filter(item => typeof item.seq !== 'number' || item.seq > since)
+      const running = summary.items?.some(item => item.sessionId === sessionId && item.running === true) === true
       const status = [...this.#pending.values()].some(item => item.sessionId === sessionId)
         ? 'waiting'
-        : inferSessionStatus(items)
+        : running ? 'running' : inferSessionStatus(items)
       writeJson(response, 200, await this.#response({ since, items, status }))
       return
     }
@@ -1012,10 +1016,20 @@ function isPlanReviewCancellation(response: Record<string, unknown>): boolean {
 }
 
 function inferSessionStatus(items: Array<{ event?: Record<string, unknown> }>): 'running' | 'waiting' | 'idle' {
-  const last = items.at(-1)?.event
-  if (last?.type === 'approval/requested' || last?.type === 'question/requested') return 'waiting'
-  if (last?.type === 'host/session-status' && last.running === true) return 'running'
-  return 'idle'
+  const openTurns = new Set<number>()
+  for (const item of items) {
+    const event = item.event
+    if (event === undefined) continue
+    if (event.type === 'approval/requested' || event.type === 'question/requested') return 'waiting'
+    const data = event.data !== null && typeof event.data === 'object' && !Array.isArray(event.data)
+      ? event.data as Record<string, unknown>
+      : event
+    const turn = typeof data.turn === 'number' && Number.isInteger(data.turn) ? data.turn : undefined
+    if (turn === undefined) continue
+    if (event.type === 'turn/start') openTurns.add(turn)
+    else if (event.type === 'turn/end' || event.type === 'turn/error') openTurns.delete(turn)
+  }
+  return openTurns.size > 0 ? 'running' : 'idle'
 }
 
 function toGatewayError(error: unknown): MobileGatewayError {

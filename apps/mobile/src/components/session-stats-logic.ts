@@ -60,7 +60,7 @@ export function sessionStatisticsLine(
     if (durations.length > 0) groups.push(durations.join(' · '))
     const speeds: string[] = []
     if (stats.ttftSteps > 0) speeds.push(`首 token 平均 ${formatStatisticsDuration(stats.ttftMs / stats.ttftSteps)}`)
-    if (stats.decodeMs > 0 && stats.decodeTokens > 0)
+    if (stats.decodeMs > 0)
       speeds.push(`${formatStatisticsTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000))} tok/s`)
     if (speeds.length > 0) groups.push(speeds.join(' · '))
   }

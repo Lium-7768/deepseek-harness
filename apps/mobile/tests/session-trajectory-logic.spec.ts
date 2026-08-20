@@ -57,16 +57,16 @@ describe('native trajectory activity projection', () => {
     ] as never)
 
     expect(activities).toEqual([
-      expect.objectContaining({ kind: 'user', title: '你的消息', detail: '请读取项目配置', turn: 4, showTurn: true }),
+      expect.objectContaining({ kind: 'user', title: '你的请求', detail: '请读取项目配置', turn: 4, showTurn: true }),
       expect.objectContaining({
         kind: 'tool',
-        title: '已完成读取文件 · read_file',
+        title: '读取文件',
         detail: '已读取配置文件',
         state: 'completed',
         turn: 4,
         durationMs: 1_500,
       }),
-      expect.objectContaining({ kind: 'reasoning', title: '完成思考', detail: '先检查配置，再确认默认模型。', turn: 4 }),
+      expect.objectContaining({ kind: 'reasoning', title: '分析问题', detail: '先检查配置，再确认默认模型。', turn: 4 }),
       expect.objectContaining({ kind: 'assistant', title: '生成回复', detail: '配置读取完成。', turn: 4 }),
     ])
     expect(activities.some(activity => activity.title.includes('tool/call'))).toBe(false)
@@ -84,7 +84,40 @@ describe('native trajectory activity projection', () => {
     ] as never)
 
     expect(activities).toEqual([
-      expect.objectContaining({ kind: 'tool', title: '正在运行命令 · bash', state: 'running', turn: 2, showTurn: true }),
+      expect.objectContaining({
+        kind: 'tool',
+        title: '运行命令',
+        detail: '正在运行命令。',
+        state: 'running',
+        turn: 2,
+        showTurn: true,
+      }),
+    ])
+  })
+
+  it('replaces raw JSON tool output with a user-facing completion summary', () => {
+    const activities = projectNativeTrajectoryActivities([
+      {
+        seq: 9,
+        event: {
+          type: 'tool/result',
+          data: {
+            turn: 3,
+            message: {
+              content: [{ type: 'tool-result', content: [{ type: 'text', text: '{"status":"ok","trace":"internal"}' }] }],
+            },
+          },
+        },
+      },
+    ] as never)
+
+    expect(activities).toEqual([
+      expect.objectContaining({
+        kind: 'tool',
+        title: '执行操作',
+        detail: '操作完成，可在桌面端查看完整结果。',
+        state: 'completed',
+      }),
     ])
   })
 

@@ -1029,3 +1029,55 @@ test('session list projects desktop history titles and blank metadata for the na
     { sessionId: 'titled-session', title: '桌面投影标题', blank: false },
   ])
 })
+
+
+test('session event baseline reports a desktop session that is already running', async t => {
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      muxResponse = response
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const values = {
+      '/api/session.history': {
+        events: [
+          { event: { type: 'turn/start', seq: 10, time: 1_000, data: { turn: 3 } } },
+          { event: { type: 'tool/call', seq: 11, data: { turn: 3, callId: 'call-1', name: 'bash' } } },
+        ],
+      },
+      '/api/session.list': {
+        items: [{ sessionId: 'session-running', title: 'Running fixture', running: true }],
+      },
+    }
+    const value = values[request.url]
+    assert.notEqual(value, undefined, `unexpected DSH route ${request.url}`)
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } }))
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Running-state fixture phone')
+  const response = await fetch(`${status.url}/v1/sessions/session-running/events`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  })
+
+  assert.equal(response.status, 200)
+  const payload = await response.json()
+  assert.equal(payload.data.status, 'running')
+  assert.equal(payload.data.items.length, 2)
+})

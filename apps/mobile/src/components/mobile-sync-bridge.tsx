@@ -229,9 +229,18 @@ function appendSessionEvent(queryClient: ReturnType<typeof useQueryClient>, sess
     return {
       since: Math.max(current?.since ?? 0, item.seq ?? 0),
       items: [...items, item],
-      status: current?.status ?? 'running',
+      status: statusAfterSessionEvent(current?.status, item.event),
     }
   })
+}
+
+function statusAfterSessionEvent(
+  current: SessionEventsPayload['status'] | undefined,
+  event: Record<string, unknown>,
+): SessionEventsPayload['status'] {
+  if (event.type === 'turn/start') return 'running'
+  if (event.type === 'turn/end' || event.type === 'turn/error') return 'idle'
+  return current ?? 'idle'
 }
 
 function updateSessionStatus(queryClient: ReturnType<typeof useQueryClient>, sessionId: string, running: boolean): void {

@@ -66,7 +66,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'user'),
         kind: 'user',
-        title: '你的消息',
+        title: '你的请求',
         ...textDetail(messageText(data)),
         ...turnField(turn),
       })
@@ -85,7 +85,7 @@ export function projectNativeTrajectoryActivities(
         pushActivity(activities, {
           id: activityId(item, 'reasoning'),
           kind: 'reasoning',
-          title: '完成思考',
+          title: '分析问题',
           ...textDetail(reasoning),
           ...turnField(turn),
         })
@@ -109,9 +109,9 @@ export function projectNativeTrajectoryActivities(
         id: activityId(item, callId ?? `tool-${activities.length}`),
         kind: 'tool',
         state: 'running',
-        title: toolActivityTitle('running', toolName),
+        title: toolActivityTitle(toolName),
         toolName,
-        ...textDetail(stringField(data.description) ?? previewValue(data.arguments)),
+        ...textDetail(toolCallDetail(toolName, data)),
         ...turnField(turn),
       }
       pushActivity(activities, activity)
@@ -133,8 +133,8 @@ export function projectNativeTrajectoryActivities(
           activities[knownTool.index] = {
             ...current,
             state: result.failed ? 'failed' : 'completed',
-            title: toolActivityTitle(result.failed ? 'failed' : 'completed', current.toolName ?? '工具'),
-            ...(result.output === undefined ? {} : textDetail(result.output)),
+            title: toolActivityTitle(current.toolName ?? '工具'),
+            ...textDetail(toolResultDetail(result.output, result.failed)),
             ...(time === undefined || knownTool.startedAt === undefined
               ? {}
               : { durationMs: Math.max(0, time - knownTool.startedAt) }),
@@ -146,8 +146,8 @@ export function projectNativeTrajectoryActivities(
         id: activityId(item, 'tool-result'),
         kind: 'tool',
         state: result.failed ? 'failed' : 'completed',
-        title: result.failed ? '工具执行失败' : '工具执行完成',
-        ...(result.output === undefined ? {} : textDetail(result.output)),
+        title: '执行操作',
+        ...textDetail(toolResultDetail(result.output, result.failed)),
         ...turnField(turn),
       })
       continue
@@ -158,7 +158,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'retry'),
         kind: 'retry',
-        title: '模型请求失败，正在重试',
+        title: '正在重新连接模型',
         ...textDetail(stringField(failure?.message)),
         ...turnField(turn),
       })
@@ -169,7 +169,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'turn-error'),
         kind: 'error',
-        title: '本回合执行失败',
+        title: '本次任务未完成',
         ...textDetail(stringField(data.message)),
         ...turnField(turn),
       })
@@ -182,7 +182,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'context'),
         kind: 'context',
-        title: '已加载上下文',
+        title: '已加载参考资料',
         ...textDetail(source === undefined ? undefined : fileName(source)),
         ...turnField(turn),
       })
@@ -193,7 +193,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'compaction'),
         kind: 'compaction',
-        title: '已压缩历史上下文',
+        title: '已整理历史内容',
         ...textDetail(stringField(data.summary)),
         ...turnField(turn),
       })
@@ -204,7 +204,7 @@ export function projectNativeTrajectoryActivities(
       pushActivity(activities, {
         id: activityId(item, 'question'),
         kind: 'question',
-        title: '等待你的处理',
+        title: '需要你的确认',
         ...textDetail(stringField(data.question) ?? stringField(data.message) ?? stringField(data.title)),
         ...turnField(turn),
       })
@@ -227,10 +227,8 @@ export function formatTrajectoryDuration(milliseconds: number): string {
   return `${Math.floor(rounded / 60)}分${rounded % 60}秒`
 }
 
-function toolActivityTitle(state: NativeTrajectoryActivityState, toolName: string): string {
-  const action = toolActionName(toolName)
-  const prefix = state === 'running' ? '正在' : state === 'completed' ? '已完成' : '执行失败'
-  return `${prefix}${action} · ${toolName}`
+function toolActivityTitle(toolName: string): string {
+  return toolActionName(toolName)
 }
 
 function toolActionName(toolName: string): string {
@@ -238,11 +236,40 @@ function toolActionName(toolName: string): string {
   if (normalized === 'bash' || normalized.includes('terminal')) return '运行命令'
   if (normalized.includes('read') || normalized.includes('open_file')) return '读取文件'
   if (normalized.includes('write') || normalized.includes('edit')) return '编辑文件'
-  if (normalized.includes('search')) return '搜索信息'
+  if (normalized.includes('search')) return '搜索资料'
   if (normalized.includes('todo')) return '更新任务清单'
-  if (normalized.includes('goal')) return '读取当前目标'
+  if (normalized.includes('goal')) return '查看当前目标'
   if (normalized.includes('job_output')) return '查看任务输出'
-  return '使用工具'
+  if (normalized.includes('browser')) return '访问网页'
+  return '执行操作'
+}
+
+function toolCallDetail(toolName: string, data: EventRecord): string {
+  const description = stringField(data.description)
+  if (description !== undefined && !isTechnicalText(description)) return description
+  const target = toolTarget(data.arguments)
+  return target === undefined ? `正在${toolActionName(toolName)}。` : `${toolActionName(toolName)}：${target}`
+}
+
+function toolResultDetail(output: string | undefined, failed: boolean): string {
+  const readable = output === undefined || isTechnicalText(output) ? undefined : previewText(output)
+  if (readable !== undefined) return readable
+  return failed ? '操作未完成，请在桌面端查看详细错误信息。' : '操作完成，可在桌面端查看完整结果。'
+}
+
+function toolTarget(value: unknown): string | undefined {
+  const record = recordField(value)
+  if (record === undefined) return undefined
+  const path = stringField(record.path)
+  if (path !== undefined) return fileName(path)
+  return stringField(record.query) ?? stringField(record.url)
+}
+
+function isTechnicalText(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.startsWith('{')
+    || trimmed.startsWith('[')
+    || /(^|\s)(Error|TypeError|ReferenceError|SyntaxError|Traceback|stack trace)\b/i.test(trimmed)
 }
 
 function activityId(item: SharedEventItem, suffix: string): string {
@@ -308,18 +335,6 @@ function toolResult(data: EventRecord): { callId?: string; failed: boolean; outp
     failed: result?.isError === true,
     ...(output ? { output } : {}),
   }
-}
-
-function previewValue(value: unknown): string | undefined {
-  if (typeof value === 'string') return value
-  if (value === undefined || value === null || typeof value !== 'object') return undefined
-  const record = recordField(value)
-  if (record === undefined) return undefined
-  for (const key of ['path', 'query', 'command', 'url', 'description']) {
-    const candidate = stringField(record[key])
-    if (candidate !== undefined) return candidate
-  }
-  return undefined
 }
 
 function fileName(value: string): string {

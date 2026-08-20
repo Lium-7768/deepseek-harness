@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-mobile-conversation-flow-parity.md
-2026-08-20-mobile-conversation-flow-parity.md: f04b2921a32c42129eb21dc51c6ed185bdb1e9f3
-2026-08-20-mobile-conversation-flow-parity.zh.md: 729bb40d90683fb79c1ff3811ac4ac3388dec11f
+2026-08-20-mobile-conversation-flow-parity.md: 3f73f164fc6e73731f0253c9110fc1f5f926072a
+2026-08-20-mobile-conversation-flow-parity.zh.md: 4947ca345d93e5e01a84c2e399ae3b56bd8ad33c

@@ -262,7 +262,9 @@ export default function SessionScreen(): React.JSX.Element {
   const hasMoreHistory = olderHasMore ?? history.data?.hasMore ?? false
   const actions = interactions.data?.items.length ?? 0
   const goal = goalFromProjection(history.data?.projections?.values)
-  const status = events.data?.status ?? '正在连接'
+  const reportedStatus = events.data?.status ?? '正在连接'
+  const running = reportedStatus === 'running' || activeSession?.running === true || runningTurnStartedAt !== undefined
+  const status = running ? 'running' : reportedStatus
   const displayStatus = connection ? status : 'disconnected'
 
   return (

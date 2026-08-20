@@ -66,6 +66,25 @@ describe('session statistics logic', () => {
     expect(line).not.toContain('132.0146174218317')
   })
 
+  it('keeps the zero-throughput statistic when desktop has a decode duration', () => {
+    const line = sessionStatisticsLine(
+      {
+        sessionStats: {
+          turns: 1,
+          steps: 1,
+          llmMs: 0,
+          toolMs: 0,
+          ttftMs: 0,
+          ttftSteps: 0,
+          decodeMs: 1_000,
+          decodeTokens: 0,
+        },
+      },
+      [],
+    )
+    expect(line).toBe('1 轮 · 1 步 | 0 tok/s')
+  })
+
   it('falls back to durable completion events but omits unavailable timing and usage', () => {
     const line = sessionStatisticsLine(undefined, [
       { event: { type: 'turn/end' } },
