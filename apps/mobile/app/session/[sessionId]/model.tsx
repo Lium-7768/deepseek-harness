@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
-import { NativeListRow, NativeSection } from '@/components/native-list'
+import { NativeModelSelectionGroup, nativeModelSelectionKey } from '@/components/native-model-selection'
 import { NativeActionButton } from '@/components/native-action-button'
 import { NativeIcon } from '@/components/native-icon'
 import { selectionOptionDisabled } from '@/components/session-route-logic'
@@ -11,7 +11,6 @@ import { WorkspaceShell } from '@/components/workspace-shell'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
-import type { MobileModelCatalogModel } from '@/types/mobile'
 
 /** Lists the session's real provider catalog and records a model selection. */
 export default function SessionModelScreen(): React.JSX.Element {
@@ -71,86 +70,35 @@ export default function SessionModelScreen(): React.JSX.Element {
           </View>
         }
         renderItem={({ item }) => (
-          <NativeSection title={item.name}>
-            {item.models.map(model => (
-              <ModelRow
-                key={model.id}
-                model={model}
-                provider={item.id}
-                activeKey={activeKey}
-                sessionId={sessionId}
-                client={client}
-                onSelected={setSelectedModel}
-                submitting={submitting}
-                onSubmitting={setSubmitting}
-              />
-            ))}
-          </NativeSection>
+          <NativeModelSelectionGroup
+            disabled={selectionOptionDisabled(submitting !== undefined)}
+            group={item}
+            onSelect={({ provider, model }) => {
+              if (client === undefined || sessionId === undefined || submitting !== undefined) return
+              const key = nativeModelSelectionKey(provider, model)
+              const previous = activeKey
+              setSelectedModel(key)
+              setSubmitting(key)
+              void client
+                .selectSessionModel(sessionId, { provider, model })
+                .then(() => router.back())
+                .catch((error) => {
+                  setSelectedModel(previous)
+                  Alert.alert('模型切换失败', mobileErrorMessage(error, '无法切换模型，请稍后重试。'))
+                })
+                .finally(() => setSubmitting(undefined))
+            }}
+            selection={
+              activeKey === undefined
+                ? undefined
+                : { provider: activeKey.slice(0, activeKey.indexOf(':')), model: activeKey.slice(activeKey.indexOf(':') + 1) }
+            }
+            submittingKey={submitting}
+          />
         )}
       />
     </WorkspaceShell>
   )
-}
-
-function ModelRow({
-  model,
-  provider,
-  activeKey,
-  sessionId,
-  client,
-  onSelected,
-  submitting,
-  onSubmitting,
-}: {
-  model: MobileModelCatalogModel
-  provider: string
-  activeKey: string | undefined
-  sessionId: string | undefined
-  client: MobileApi | undefined
-  onSelected: (key: string | undefined) => void
-  submitting: string | undefined
-  onSubmitting: (key: string | undefined) => void
-}): React.JSX.Element {
-  const key = `${provider}:${model.id}`
-  const selected = activeKey === key
-  const disabled = selectionOptionDisabled(submitting !== undefined)
-  return (
-    <NativeListRow
-      accessibilityLabel={model.name + (selected ? '，当前模型' : '') + (disabled ? '，不可用' : '')}
-      description={modelSecondaryText(model)}
-      disabled={disabled}
-      onPress={() => {
-        if (client === undefined || sessionId === undefined || submitting !== undefined) return
-        const previous = activeKey
-        onSelected(key)
-        onSubmitting(key)
-        void client
-          .selectSessionModel(sessionId, { provider, model: model.id })
-          .then(() => router.back())
-          .catch((error) => {
-            onSelected(previous)
-            Alert.alert('模型切换失败', mobileErrorMessage(error, '无法切换模型，请稍后重试。'))
-          })
-          .finally(() => onSubmitting(undefined))
-      }}
-      right={
-        submitting === key ? (
-          <ActivityIndicator color={mobileTheme.colors.accent} />
-        ) : selected ? (
-          <NativeIcon name="check" color={mobileTheme.colors.accentText} size={20} />
-        ) : null
-      }
-      selected={selected}
-      title={model.name}
-    />
-  )
-}
-
-function modelSecondaryText(model: MobileModelCatalogModel): string | undefined {
-  const detail = model.description?.trim() || model.id
-  const normalizedDetail = detail.replace(/[^a-z0-9]/gi, '').toLowerCase()
-  const normalizedName = model.name.replace(/[^a-z0-9]/gi, '').toLowerCase()
-  return normalizedDetail === normalizedName ? undefined : detail
 }
 
 function StateView({

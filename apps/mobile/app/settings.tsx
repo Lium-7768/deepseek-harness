@@ -6,6 +6,8 @@ import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeActionButton } from '@/components/native-action-button'
 import { NativeIcon } from '@/components/native-icon'
 import { NativeListRow, NativeSection } from '@/components/native-list'
+import { NativeModelSelectionGroup, type NativeModelSelection, nativeModelSelectionKey } from '@/components/native-model-selection'
+import { NativeSelectionRow } from '@/components/native-selection'
 import { settingsSectionIcon } from '@/components/settings-logic'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { useConnectionStore } from '@/state/connection'
@@ -212,67 +214,78 @@ function ModelSettings({
   connection: NonNullable<ReturnType<typeof useConnectionStore.getState>['connection']>
 }): React.JSX.Element {
   const client = new MobileApi(connection)
-  const providers = useQuery({
-    queryKey: ['mobile-llm-providers', connection.gatewayUrl, connection.deviceId],
-    queryFn: () => client.llmProviders(),
-  })
+  const queryClient = useQueryClient()
   const models = useQuery({
     queryKey: ['mobile-llm-models', connection.gatewayUrl, connection.deviceId],
     queryFn: () => client.llmModels(),
   })
-  if (providers.isPending || models.isPending) return <CenteredState text="正在加载模型目录…" />
+  const settings = useQuery({
+    queryKey: ['mobile-settings', connection.gatewayUrl, connection.deviceId],
+    queryFn: () => client.settingsDescribe(),
+  })
+  const [submitting, setSubmitting] = useState<string | undefined>(undefined)
+  const descriptor = namespace(settings.data, 'agent-default-model')
+  const selection = readModelSelection(descriptor?.value)
+  const writable = settings.data?.writable === true && descriptor !== undefined
+  const chooseDefaultModel = (next: NativeModelSelection): void => {
+    if (!writable || submitting !== undefined) return
+    const key = nativeModelSelectionKey(next.provider, next.model)
+    setSubmitting(key)
+    void client
+      .settingsMutate({
+        ns: 'agent-default-model',
+        expectedRevision: descriptor.revision,
+        ops: [
+          { op: 'set', path: ['provider'], value: next.provider },
+          { op: 'set', path: ['model'], value: next.model },
+          { op: 'unset', path: ['reasoningEffort'] },
+        ],
+      })
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['mobile-settings', connection.gatewayUrl, connection.deviceId] })
+        Alert.alert('默认模型已保存', '之后创建的会话将使用此模型。')
+      })
+      .catch(error => Alert.alert('默认模型保存失败', mobileErrorMessage(error, '无法保存默认模型，请稍后重试。')))
+      .finally(() => setSubmitting(undefined))
+  }
+  if (models.isPending || settings.isPending) return <CenteredState text="正在加载模型目录…" />
   return (
     <ScrollView contentContainerStyle={styles.list}>
       <View style={styles.header}>
-        <Text style={styles.subtitle}>移动端可以查看和选择会话模型；API 密钥、地址和提供方配置必须在桌面端完成。</Text>
+        <Text style={styles.subtitle}>仅影响之后创建的会话。会话中的模型可在输入框底部单独切换。</Text>
       </View>
-      {providers.isError ? (
-        <QueryErrorNotice
-          text={mobileErrorMessage(providers.error, '模型提供方加载失败，请稍后重试。')}
-          onRetry={() => void providers.refetch()}
-        />
-      ) : null}
       {models.isError ? (
         <QueryErrorNotice
           text={mobileErrorMessage(models.error, '模型目录加载失败，请稍后重试。')}
           onRetry={() => void models.refetch()}
         />
       ) : null}
-      <OptionSection title="模型提供方" description="提供方状态来自桌面端实时注册表。">
-        {providers.data?.providers.map(provider => (
-          <View key={provider.provider} style={styles.providerRow}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{provider.displayName}</Text>
-              <Text style={styles.rowDescription}>{provider.provider}</Text>
-            </View>
-            <Text style={provider.active ? styles.active : styles.muted}>{provider.active ? '已启用' : '未启用'}</Text>
-          </View>
-        ))}
-        {providers.data?.providers.length === 0 ? (
-          <Text style={styles.muted}>桌面端没有已注册的模型提供方。</Text>
-        ) : null}
-      </OptionSection>
-      <OptionSection title="可用模型" description="点击会话输入框底部的模型名称，可为当前会话选择模型。">
-        {models.data?.groups.map(group => (
-          <View key={group.id} style={styles.providerGroup}>
-            <Text style={styles.groupTitle}>{group.name}</Text>
-            {group.models.map(model => (
-              <View key={model.id} style={styles.catalogRow}>
-                <Text style={styles.rowTitle}>{model.name}</Text>
-                <Text style={styles.rowDescription}>{model.description ?? model.id}</Text>
-              </View>
-            ))}
-          </View>
-        ))}
-        {models.data?.groups.length === 0 ? <Text style={styles.muted}>当前没有可用模型。</Text> : null}
-        {models.data?.failures.map(failure => (
-          <Text key={failure.id} style={styles.warning}>
-            {failure.name}：目录暂不可用。
-          </Text>
-        ))}
-      </OptionSection>
+      {settings.isError ? (
+        <QueryErrorNotice
+          text={mobileErrorMessage(settings.error, '默认模型加载失败，请稍后重试。')}
+          onRetry={() => void settings.refetch()}
+        />
+      ) : null}
+      <Text style={styles.selectionHint}>新会话默认模型</Text>
+      {models.data?.groups.map(group => (
+        <NativeModelSelectionGroup
+          key={group.id}
+          disabled={!writable || submitting !== undefined}
+          group={group}
+          onSelect={chooseDefaultModel}
+          selection={selection}
+          submittingKey={submitting}
+        />
+      ))}
+      {models.data?.groups.length === 0 ? <Text style={styles.muted}>当前没有可用模型。</Text> : null}
+      {models.data?.failures.map(failure => (
+        <Text key={failure.id} style={styles.warning}>
+          {failure.name}：目录暂不可用。
+        </Text>
+      ))}
+      {!writable ? <Text style={styles.notice}>默认模型由桌面端配置提供方管理，当前不可在移动端修改。</Text> : null}
       <ReadOnlySetting
-        title="提供方编辑"
+        title="提供方与 API 密钥"
         value="桌面端专属"
         detail="移动端不会接收或保存 API 密钥，也不开放任意提供方配置。"
       />
@@ -312,13 +325,13 @@ function PluginSettings({
       </View>
       <OptionSection title="桌面端配置命名空间" description="插件的完整配置表单和敏感字段只在桌面端提供。">
         {namespaces.map(item => (
-          <View key={item.ns} style={styles.providerRow}>
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{pluginLabel(item.ns)}</Text>
-              <Text style={styles.rowDescription}>{item.ns}</Text>
-            </View>
-            <Text style={styles.muted}>{item.applies === 'restart' ? '重启生效' : '实时生效'}</Text>
-          </View>
+          <NativeListRow
+            key={item.ns}
+            description={item.ns}
+            multiline
+            right={<Text style={styles.muted}>{item.applies === 'restart' ? '重启生效' : '实时生效'}</Text>}
+            title={pluginLabel(item.ns)}
+          />
         ))}
         {namespaces.length === 0 ? <Text style={styles.muted}>桌面端没有可展示的插件配置。</Text> : null}
       </OptionSection>
@@ -519,12 +532,10 @@ function OptionRow({
   onPress: () => void
 }): React.JSX.Element {
   return (
-    <NativeListRow
-      accessibilityRole="radio"
+    <NativeSelectionRow
       description={description}
       disabled={disabled}
       onPress={onPress}
-      right={selected ? <NativeIcon name="check" color={mobileTheme.colors.accentText} size={20} /> : null}
       selected={selected}
       title={label}
     />
@@ -603,6 +614,13 @@ function readRecord(value: unknown): Record<string, unknown> | undefined {
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
+}
+
+function readModelSelection(value: unknown): NativeModelSelection | undefined {
+  const record = readRecord(value)
+  const provider = readString(record?.provider)
+  const model = readString(record?.model)
+  return provider === undefined || model === undefined ? undefined : { provider, model }
 }
 
 function themeLabel(value: string): string {
@@ -689,17 +707,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 12,
   },
-  providerRow: {
-    alignItems: 'center',
-    borderBottomColor: mobileTheme.colors.border,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 9,
+  selectionHint: {
+    color: mobileTheme.colors.inkMuted,
+    fontSize: mobileTheme.typography.caption,
+    fontWeight: '600',
+    marginHorizontal: mobileTheme.spacing.sm,
+    marginBottom: -mobileTheme.spacing.xs,
   },
-  providerGroup: { gap: 7 },
-  groupTitle: { color: mobileTheme.colors.inkMuted, fontSize: 13, fontWeight: '700' },
-  catalogRow: { borderColor: mobileTheme.colors.border, borderRadius: 8, borderWidth: 1, gap: 3, padding: 10 },
   cardHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   connectionCard: {
     backgroundColor: mobileTheme.colors.surfaceMuted,

@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeActionButton } from '@/components/native-action-button'
 import { NativeIcon } from '@/components/native-icon'
-import { NativeListRow, NativeSection } from '@/components/native-list'
+import { NativeSection } from '@/components/native-list'
+import { NativeSelectionRow } from '@/components/native-selection'
 import { modeOptionDisabled, selectionOptionDisabled } from '@/components/session-route-logic'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { useConnectionStore } from '@/state/connection'
@@ -100,16 +101,14 @@ export default function SessionModeScreen(): React.JSX.Element {
                   broken: item.broken !== undefined,
                 }) || selectionOptionDisabled(submitting !== undefined)
               return (
-                <NativeListRow
+                <NativeSelectionRow
                   key={item.id}
-                  accessibilityRole="radio"
                   accessibilityLabel={
                     (item.name ?? item.id) + (selected ? '，当前模式' : '') + (disabled ? '，不可用' : '')
                   }
                   description={item.broken ?? item.description ?? (item.trust === 'system' ? '内置模式' : '自定义模式')}
                   disabled={disabled}
-                  multiline
-                  preserveDisabledReadability={!blank && !sessions.isPending && !sessions.isError}
+                  loading={submitting === item.id}
                   onPress={() => {
                     if (client === undefined || sessionId === undefined || submitting !== undefined) return
                     setSubmitting(item.id)
@@ -121,13 +120,7 @@ export default function SessionModeScreen(): React.JSX.Element {
                       )
                       .finally(() => setSubmitting(undefined))
                   }}
-                  right={
-                    submitting === item.id ? (
-                      <ActivityIndicator color={mobileTheme.colors.accent} />
-                    ) : selected ? (
-                      <NativeIcon name="check" color={mobileTheme.colors.accentText} size={20} />
-                    ) : null
-                  }
+                  preserveDisabledReadability={!blank && !sessions.isPending && !sessions.isError}
                   selected={selected}
                   title={item.name ?? item.id}
                 />
