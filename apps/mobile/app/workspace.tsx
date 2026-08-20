@@ -71,10 +71,7 @@ export default function WorkspaceScreen(): React.JSX.Element {
     <WorkspaceShell
       showBrand={false}
       title={workspaceTitle}
-      titleAccessibilityLabel={`打开工作区和会话列表：${workspaceTitle}`}
-      titleAccessory={<NativeIcon name="chevron-down" size={17} color={mobileTheme.colors.inkMuted} />}
       titleLeading={<NativeIcon name="folder" size={21} color={mobileTheme.colors.ink} />}
-      onTitlePress={() => navigation.openDrawer()}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
