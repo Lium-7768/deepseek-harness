@@ -5,7 +5,8 @@ import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeIcon } from '@/components/native-icon'
-import { selectedSessionTarget, sessionDisplayTitle, sessionTimeLabel } from '@/components/session-drawer-logic'
+import { agentPresetLabel } from '@/components/session-composer-logic'
+import { selectedSessionTarget, sessionDisplayTitle, sessionTimeLabel, workspaceForSession, workspaceLabel } from '@/components/session-drawer-logic'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
@@ -29,6 +30,8 @@ export default function WorkspaceScreen(): React.JSX.Element {
     queryFn: () => new MobileApi(requireConnection(connection)).listSessions(),
   })
   const selectedSession = selectedSessionTarget(sessions.data?.items ?? [], selectedSessionId)
+  const selectedWorkspace = workspaceForSession(sessions.data?.workspaces ?? [], selectedSession?.sessionId)
+  const workspaceTitle = selectedWorkspace === undefined ? '工作区' : workspaceLabel(selectedWorkspace)
   useEffect(() => {
     if (connection === undefined) {
       restoredConnectionKey.current = undefined
@@ -66,13 +69,19 @@ export default function WorkspaceScreen(): React.JSX.Element {
 
   return (
     <WorkspaceShell
-      title="DeepSeek Harness"
-      rightAction={<Status connected={Boolean(connection)} />}
-      headerMeta={
-        <View style={s.headerMeta}>
-          <Text style={s.headerMetaLabel}>工作区</Text>
-          <Text style={s.headerMetaHint}>{connection ? '已连接桌面端' : '尚未连接桌面端'}</Text>
-        </View>
+      showBrand={false}
+      title={workspaceTitle}
+      titleAccessibilityLabel={`打开工作区和会话列表：${workspaceTitle}`}
+      titleAccessory={<NativeIcon name="chevron-down" size={17} color={mobileTheme.colors.inkMuted} />}
+      titleLeading={<NativeIcon name="folder" size={21} color={mobileTheme.colors.ink} />}
+      onTitlePress={() => navigation.openDrawer()}
+      rightAction={
+        <ModeTrigger
+          agentPreset={selectedSession?.agentPreset}
+          compact
+          disabled={!connection}
+          sessionId={selectedSession?.sessionId}
+        />
       }
     >
       <KeyboardAvoidingView
@@ -97,17 +106,7 @@ export default function WorkspaceScreen(): React.JSX.Element {
               </Text>
               <NativeIcon name="expand-more" size={18} color={mobileTheme.colors.inkMuted} />
             </Pressable>
-            <View
-              accessible
-              accessibilityLabel="标准模式（仅支持）"
-              accessibilityState={{ disabled: true }}
-              style={s.disabledControl}
-            >
-              <NativeIcon name="tune" size={16} color={mobileTheme.colors.inkMuted} />
-              <Text numberOfLines={1} style={s.controlText}>
-                标准模式
-              </Text>
-            </View>
+            <ModeTrigger agentPreset={selectedSession?.agentPreset} disabled={!connection} sessionId={selectedSession?.sessionId} />
           </View>
           <Text style={s.detail}>
             {workspaceDetail(connection, sessions, selectedSession === undefined ? undefined : sessionTimeLabel(selectedSession))}
@@ -124,12 +123,42 @@ export default function WorkspaceScreen(): React.JSX.Element {
   )
 }
 
-function Status({ connected }: { connected: boolean }): React.JSX.Element {
+function ModeTrigger({
+  agentPreset,
+  compact = false,
+  disabled,
+  sessionId,
+}: {
+  agentPreset: string | undefined
+  compact?: boolean
+  disabled: boolean
+  sessionId: string | undefined
+}): React.JSX.Element {
+  const label = agentPresetLabel(agentPreset)
+  const openMode = (): void => {
+    if (disabled) return
+    if (sessionId !== undefined) {
+      router.push({ pathname: '/session/[sessionId]/mode', params: { sessionId } })
+      return
+    }
+    router.push('/settings?section=general')
+  }
   return (
-    <View style={s.status}>
-      <View style={[s.dot, !connected && s.offline]} />
-      <Text style={s.statusText}>{connected ? '已连接' : '未连接'}</Text>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={sessionId === undefined ? `设置新会话默认模式：${label}` : `选择智能体模式：${label}`}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={compact ? 5 : { top: 8, bottom: 8 }}
+      onPress={openMode}
+      style={({ pressed }) => [compact ? s.headerMode : s.modeControl, disabled && s.disabledControl, pressed && s.pressed]}
+    >
+      <NativeIcon name="agent-preset" size={compact ? 17 : 16} color={mobileTheme.colors.inkMuted} />
+      <Text numberOfLines={1} style={compact ? s.headerModeText : s.controlText}>
+        {label}
+      </Text>
+      <NativeIcon name="chevron-down" size={compact ? 15 : 17} color={mobileTheme.colors.inkMuted} />
+    </Pressable>
   )
 }
 
@@ -172,7 +201,7 @@ const s = StyleSheet.create({
     minHeight: mobileTheme.touch.minTarget,
     paddingHorizontal: 11,
   },
-  disabledControl: {
+  modeControl: {
     alignItems: 'center',
     backgroundColor: mobileTheme.colors.surfaceMuted,
     borderColor: mobileTheme.colors.border,
@@ -181,17 +210,12 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
     minHeight: mobileTheme.touch.minTarget,
-    opacity: 0.72,
     paddingHorizontal: 11,
   },
+  disabledControl: { opacity: 0.5 },
   controlText: { color: mobileTheme.colors.ink, flexShrink: 1, fontSize: 13, fontWeight: '500' },
   detail: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 18 },
-  status: { alignItems: 'center', flexDirection: 'row', gap: 5 },
-  dot: { backgroundColor: mobileTheme.colors.success, borderRadius: 4, height: 7, width: 7 },
-  offline: { backgroundColor: mobileTheme.colors.inkFaint },
-  statusText: { color: mobileTheme.colors.inkMuted, fontSize: 11 },
-  headerMeta: { alignItems: 'center', flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
-  headerMetaLabel: { color: mobileTheme.colors.ink, fontSize: 12, fontWeight: '600' },
-  headerMetaHint: { color: mobileTheme.colors.inkMuted, fontSize: 11 },
+  headerMode: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: mobileTheme.touch.minTarget, paddingHorizontal: 4 },
+  headerModeText: { color: mobileTheme.colors.ink, fontSize: 13, fontWeight: '600', maxWidth: 94 },
   pressed: { opacity: 0.62 },
 })

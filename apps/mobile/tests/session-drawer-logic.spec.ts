@@ -11,6 +11,7 @@ import {
   sessionTimeLabel,
   sortSessions,
   visibleWorkspaceRows,
+  workspaceForSession,
 } from '../src/components/session-drawer-logic.ts'
 import type { SessionSummary } from '../src/types/mobile.ts'
 
@@ -68,6 +69,16 @@ describe('session drawer logic', () => {
     expect(
       sessionRows(items, workspaces, 'workspace').map(row => row.kind === 'workspace' ? row.label : row.session.sessionId),
     ).toEqual(['项目一', 'b', 'a', '项目二', '未分组', 'c'])
+  })
+
+  it('resolves the selected session workspace from desktop-owned membership only', () => {
+    const workspaces = [
+      { workspaceId: 'w1', title: '项目一', sessionIds: ['session-a'] },
+      { workspaceId: 'w2', title: '项目二', sessionIds: ['session-b'] },
+    ]
+    expect(workspaceForSession(workspaces, 'session-b')?.title).toBe('项目二')
+    expect(workspaceForSession(workspaces, 'ungrouped')).toBeUndefined()
+    expect(workspaceForSession(workspaces, undefined)).toBeUndefined()
   })
 
   it('keeps workspace and ungrouped folders visible when a workspace is collapsed', () => {

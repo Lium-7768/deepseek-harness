@@ -86,6 +86,20 @@ export function hasWorkspaceData(workspaces: readonly MobileWorkspace[]): boolea
   return workspaces.length > 0
 }
 
+/**
+ * Finds the desktop-owned workspace that explicitly contains a session.
+ * @param workspaces - Workspace memberships projected by the desktop session list.
+ * @param sessionId - Current session identifier, if one is selected.
+ * @returns The containing workspace, or undefined for a missing or ungrouped session.
+ */
+export function workspaceForSession(
+  workspaces: readonly MobileWorkspace[],
+  sessionId: string | undefined,
+): MobileWorkspace | undefined {
+  if (sessionId === undefined) return undefined
+  return workspaces.find(workspace => workspace.sessionIds.includes(sessionId))
+}
+
 /** Reports whether one desktop session has a top-level row in the selected browser view. */
 export function sessionVisible(session: SessionSummary, currentSessionId: string | undefined): boolean {
   return session.origin !== 'subagent' && (session.blank !== true || session.sessionId === currentSessionId)
