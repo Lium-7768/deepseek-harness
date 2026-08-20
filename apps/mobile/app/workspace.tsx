@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { router, useNavigation } from 'expo-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeIcon } from '@/components/native-icon'
-import { agentPresetLabel } from '@/components/session-composer-logic'
+import { agentPresetLabel, readPermissionSelect } from '@/components/session-composer-logic'
 import { formatSessionTime, selectedSessionTarget, sessionDisplayTitle, workspaceForSession, workspaceLabel } from '@/components/session-drawer-logic'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
@@ -19,6 +19,7 @@ export default function WorkspaceScreen(): React.JSX.Element {
   const navigation = useNavigation<{ openDrawer: () => void }>()
   const insets = useSafeAreaInsets()
   const connection = useConnectionStore(state => state.connection)
+  const client = useMemo(() => (connection === undefined ? undefined : new MobileApi(connection)), [connection])
   const selectedSessionId = useSessionSelectionStore(state => state.selectedSessionId)
   const selectSessionId = useSessionSelectionStore(state => state.selectSession)
   const clearSelection = useSessionSelectionStore(state => state.clearSelection)
@@ -27,9 +28,19 @@ export default function WorkspaceScreen(): React.JSX.Element {
   const sessions = useQuery({
     queryKey: ['session-list', connection?.gatewayUrl, connection?.deviceId],
     enabled: Boolean(connection),
-    queryFn: () => new MobileApi(requireConnection(connection)).listSessions(),
+    queryFn: () => requireClient(client).listSessions(),
   })
   const selectedSession = selectedSessionTarget(sessions.data?.items ?? [], selectedSessionId)
+  const selectedSessionModels = useQuery({
+    queryKey: ['session-models', connection?.gatewayUrl, connection?.deviceId, selectedSession?.sessionId],
+    enabled: selectedSession !== undefined && client !== undefined,
+    queryFn: () => requireClient(client).sessionModels(requireSelectedSessionId(selectedSession)),
+  })
+  const selectedSessionHistory = useQuery({
+    queryKey: ['session-history', selectedSession?.sessionId],
+    enabled: selectedSession !== undefined && client !== undefined,
+    queryFn: () => requireClient(client).sessionHistory(requireSelectedSessionId(selectedSession), { maxMessages: 1 }),
+  })
   const selectedWorkspace = workspaceForSession(sessions.data?.workspaces ?? [], selectedSession?.sessionId)
   const workspaceTitle = selectedWorkspace === undefined ? '工作区' : workspaceLabel(selectedWorkspace)
   useEffect(() => {
@@ -107,7 +118,9 @@ export default function WorkspaceScreen(): React.JSX.Element {
         </View>
         <WorkspaceComposer
           agentPreset={selectedSession?.agentPreset}
+          model={selectedSessionModels.data?.current}
           onSend={send}
+          permissions={readPermissionSelect(selectedSessionHistory.data?.projections?.values.permissions)}
           sessionId={selectedSession?.sessionId}
           disabled={!connection || sessions.isFetching || sessions.isError || selectedSession === undefined}
         />
@@ -153,9 +166,14 @@ function ModeTrigger({
   )
 }
 
-function requireConnection(connection: ReturnType<typeof useConnectionStore.getState>['connection']) {
-  if (!connection) throw new Error('请先连接桌面端。')
-  return connection
+function requireClient(client: MobileApi | undefined): MobileApi {
+  if (client === undefined) throw new Error('请先连接桌面端。')
+  return client
+}
+
+function requireSelectedSessionId(session: ReturnType<typeof selectedSessionTarget>): string {
+  if (session === undefined) throw new Error('请先选择一个桌面会话。')
+  return session.sessionId
 }
 
 function workspaceDetail(

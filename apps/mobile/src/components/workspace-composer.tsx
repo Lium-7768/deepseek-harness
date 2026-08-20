@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { NativeIcon } from '@/components/native-icon'
 import {
   agentPresetLabel,
@@ -226,7 +226,7 @@ export function WorkspaceComposer({
           </Pressable>
         )}
       </View>
-      <View style={s.tools}>
+      <ScrollView contentContainerStyle={s.tools} horizontal showsHorizontalScrollIndicator={false}>
         {permissions === undefined ? (
           <View
             accessible
@@ -319,7 +319,7 @@ export function WorkspaceComposer({
             <Text style={s.toolText}>模型由桌面端控制</Text>
           </View>
         )}
-      </View>
+      </ScrollView>
     </View>
   )
 }
@@ -375,14 +375,14 @@ const s = StyleSheet.create({
     width: mobileTheme.touch.iconButton,
   },
   sendDisabled: { backgroundColor: mobileTheme.colors.borderStrong },
-  tools: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingTop: 8 },
+  tools: { alignItems: 'center', flexDirection: 'row', gap: 12, paddingRight: 12, paddingTop: 8 },
   tool: {
     alignItems: 'center',
     backgroundColor: 'transparent',
     borderRadius: mobileTheme.radius.control,
     flexDirection: 'row',
     gap: 4,
-    maxWidth: '100%',
+    flexShrink: 0,
     minHeight: 28,
     paddingHorizontal: 8,
   },
@@ -392,7 +392,7 @@ const s = StyleSheet.create({
     borderRadius: mobileTheme.radius.control,
     flexDirection: 'row',
     gap: 4,
-    maxWidth: '100%',
+    flexShrink: 0,
     minHeight: 28,
     opacity: 0.5,
     paddingHorizontal: 8,
