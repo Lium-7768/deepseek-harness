@@ -35,6 +35,15 @@ export function formatStatisticsDuration(milliseconds: number): string {
   return `${Math.floor(whole / 60)}m${whole % 60}s`
 }
 
+/**
+ * Formats decode throughput with the desktop conversation rule: whole tokens
+ * from ten per second, one decimal below, and never a raw floating-point tail.
+ */
+export function formatStatisticsTokensPerSecond(tokensPerSecond: number): string {
+  const clamped = Math.max(0, tokensPerSecond)
+  return clamped >= 10 ? String(Math.round(clamped)) : String(Math.round(clamped * 10) / 10)
+}
+
 /** Builds the compact, desktop-aligned statistics ribbon from durable projections or visible-event fallback data. */
 export function sessionStatisticsLine(
   projectionValues: Record<string, unknown> | undefined,
@@ -52,7 +61,7 @@ export function sessionStatisticsLine(
     const speeds: string[] = []
     if (stats.ttftSteps > 0) speeds.push(`首 token 平均 ${formatStatisticsDuration(stats.ttftMs / stats.ttftSteps)}`)
     if (stats.decodeMs > 0 && stats.decodeTokens > 0)
-      speeds.push(`${formatStatisticsTokens(stats.decodeTokens / (stats.decodeMs / 1_000))} tok/s`)
+      speeds.push(`${formatStatisticsTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000))} tok/s`)
     if (speeds.length > 0) groups.push(speeds.join(' · '))
   }
   if (usage !== undefined) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatStatisticsDuration,
   formatStatisticsTokens,
+  formatStatisticsTokensPerSecond,
   sessionStatisticsLine,
 } from '../src/components/session-stats-logic.ts'
 
@@ -11,6 +12,11 @@ describe('session statistics logic', () => {
     expect(formatStatisticsTokens(3_200_000)).toBe('3.2M')
     expect(formatStatisticsDuration(6_500)).toBe('6.5s')
     expect(formatStatisticsDuration(79_000)).toBe('1m19s')
+  })
+
+  it('rounds decode throughput with the same rule as the desktop statistics ribbon', () => {
+    expect(formatStatisticsTokensPerSecond(132.0146174218317)).toBe('132')
+    expect(formatStatisticsTokensPerSecond(9.94)).toBe('9.9')
   })
 
   it('renders durable desktop statistics projections without placeholder values', () => {
@@ -38,6 +44,26 @@ describe('session statistics logic', () => {
     expect(line).toBe(
       '41 轮 · 79 步 | LLM 6m19s · 工具调用 12.2s | 首 token 平均 6.5s · 147 tok/s | 缓存命中 94% | 输入 3.2M tok · 输出 250K tok',
     )
+  })
+
+  it('renders a high-precision projection without exposing a floating-point tail', () => {
+    const line = sessionStatisticsLine(
+      {
+        sessionStats: {
+          turns: 17,
+          steps: 136,
+          llmMs: 889_000,
+          toolMs: 10_461_000,
+          ttftMs: 421_600,
+          ttftSteps: 136,
+          decodeMs: 1_000,
+          decodeTokens: 132.0146174218317,
+        },
+      },
+      [],
+    )
+    expect(line).toContain('132 tok/s')
+    expect(line).not.toContain('132.0146174218317')
   })
 
   it('falls back to durable completion events but omits unavailable timing and usage', () => {
