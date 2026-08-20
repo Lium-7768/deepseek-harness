@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeIcon } from '@/components/native-icon'
 import { agentPresetLabel } from '@/components/session-composer-logic'
-import { selectedSessionTarget, sessionDisplayTitle, sessionTimeLabel, workspaceForSession, workspaceLabel } from '@/components/session-drawer-logic'
+import { formatSessionTime, selectedSessionTarget, sessionDisplayTitle, workspaceForSession, workspaceLabel } from '@/components/session-drawer-logic'
 import { WorkspaceComposer } from '@/components/workspace-composer'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { workspaceKeyboardVerticalOffset } from '@/components/workspace-shell-logic'
@@ -75,14 +75,6 @@ export default function WorkspaceScreen(): React.JSX.Element {
       titleAccessory={<NativeIcon name="chevron-down" size={17} color={mobileTheme.colors.inkMuted} />}
       titleLeading={<NativeIcon name="folder" size={21} color={mobileTheme.colors.ink} />}
       onTitlePress={() => navigation.openDrawer()}
-      rightAction={
-        <ModeTrigger
-          agentPreset={selectedSession?.agentPreset}
-          compact
-          disabled={!connection}
-          sessionId={selectedSession?.sessionId}
-        />
-      }
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -109,7 +101,11 @@ export default function WorkspaceScreen(): React.JSX.Element {
             <ModeTrigger agentPreset={selectedSession?.agentPreset} disabled={!connection} sessionId={selectedSession?.sessionId} />
           </View>
           <Text style={s.detail}>
-            {workspaceDetail(connection, sessions, selectedSession === undefined ? undefined : sessionTimeLabel(selectedSession))}
+            {workspaceDetail(
+              connection,
+              sessions,
+              selectedSession === undefined ? undefined : formatSessionTime(selectedSession.updatedAt),
+            )}
           </Text>
         </View>
         <WorkspaceComposer
@@ -125,12 +121,10 @@ export default function WorkspaceScreen(): React.JSX.Element {
 
 function ModeTrigger({
   agentPreset,
-  compact = false,
   disabled,
   sessionId,
 }: {
   agentPreset: string | undefined
-  compact?: boolean
   disabled: boolean
   sessionId: string | undefined
 }): React.JSX.Element {
@@ -149,15 +143,15 @@ function ModeTrigger({
       accessibilityLabel={sessionId === undefined ? `设置新会话默认模式：${label}` : `选择智能体模式：${label}`}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      hitSlop={compact ? 5 : { top: 8, bottom: 8 }}
+      hitSlop={{ top: 8, bottom: 8 }}
       onPress={openMode}
-      style={({ pressed }) => [compact ? s.headerMode : s.modeControl, disabled && s.disabledControl, pressed && s.pressed]}
+      style={({ pressed }) => [s.modeControl, disabled && s.disabledControl, pressed && s.pressed]}
     >
-      <NativeIcon name="agent-preset" size={compact ? 17 : 16} color={mobileTheme.colors.inkMuted} />
-      <Text numberOfLines={1} style={compact ? s.headerModeText : s.controlText}>
+      <NativeIcon name="agent-preset" size={16} color={mobileTheme.colors.inkMuted} />
+      <Text numberOfLines={1} style={s.controlText}>
         {label}
       </Text>
-      <NativeIcon name="chevron-down" size={compact ? 15 : 17} color={mobileTheme.colors.inkMuted} />
+      <NativeIcon name="chevron-down" size={17} color={mobileTheme.colors.inkMuted} />
     </Pressable>
   )
 }
@@ -215,7 +209,5 @@ const s = StyleSheet.create({
   disabledControl: { opacity: 0.5 },
   controlText: { color: mobileTheme.colors.ink, flexShrink: 1, fontSize: 13, fontWeight: '500' },
   detail: { color: mobileTheme.colors.inkMuted, fontSize: 12, lineHeight: 18 },
-  headerMode: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: mobileTheme.touch.minTarget, paddingHorizontal: 4 },
-  headerModeText: { color: mobileTheme.colors.ink, fontSize: 13, fontWeight: '600', maxWidth: 94 },
   pressed: { opacity: 0.62 },
 })
