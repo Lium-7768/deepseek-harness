@@ -30,3 +30,10 @@ export function permissionOptionsLocked(input: {
 export function selectionOptionDisabled(submitting: boolean): boolean {
   return submitting
 }
+
+/** Returns the deterministic session route used after a session-detail action settles. */
+export function sessionDetailReturnTarget(
+  sessionId: string | undefined,
+): '/workspace' | { pathname: '/session/[sessionId]'; params: { sessionId: string } } {
+  return sessionId === undefined ? '/workspace' : { pathname: '/session/[sessionId]', params: { sessionId } }
+}

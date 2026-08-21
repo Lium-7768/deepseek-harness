@@ -3,6 +3,7 @@ import {
   modeOptionDisabled,
   permissionOptionsLocked,
   selectionOptionDisabled,
+  sessionDetailReturnTarget,
 } from '../src/components/session-route-logic.ts'
 
 describe('session route interaction guards', () => {
@@ -72,5 +73,13 @@ describe('session route interaction guards', () => {
   it('disables a second mode or model write while one is pending', () => {
     expect(selectionOptionDisabled(true)).toBe(true)
     expect(selectionOptionDisabled(false)).toBe(false)
+  })
+
+  it('returns a settled session-detail action to its current conversation rather than Drawer history', () => {
+    expect(sessionDetailReturnTarget('session-current')).toEqual({
+      pathname: '/session/[sessionId]',
+      params: { sessionId: 'session-current' },
+    })
+    expect(sessionDetailReturnTarget(undefined)).toBe('/workspace')
   })
 })

@@ -17,6 +17,11 @@ export function shouldShowReturnToLatest({ hasMessages, nearLatest }: { hasMessa
   return hasMessages && !nearLatest
 }
 
+/** Decides whether a list measurement belongs to deliberate reader scrolling rather than initial positioning. */
+export function shouldTrackLatestProximity({ initialPositionPending }: { initialPositionPending: boolean }): boolean {
+  return !initialPositionPending
+}
+
 /** Decides whether the native list may move to the latest message without overriding deliberate history reading. */
 export function shouldScrollToLatest({
   hasMessages,

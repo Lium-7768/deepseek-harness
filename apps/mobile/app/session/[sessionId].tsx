@@ -38,7 +38,12 @@ import { readPermissionSelect } from '@/components/session-composer-logic'
 import { messageActionLayout, type MessageActionAlignment } from '@/components/session-message-logic'
 import { sessionStatisticsLine } from '@/components/session-stats-logic'
 import { sessionDisplayTitle } from '@/components/session-drawer-logic'
-import { isNearLatestMessage, shouldScrollToLatest, shouldShowReturnToLatest } from '@/components/session-scroll-logic'
+import {
+  isNearLatestMessage,
+  shouldScrollToLatest,
+  shouldShowReturnToLatest,
+  shouldTrackLatestProximity,
+} from '@/components/session-scroll-logic'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
 import { mobileTheme } from '@/theme'
@@ -388,11 +393,11 @@ export default function SessionScreen(): React.JSX.Element {
                   }
                 }}
                 onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+                  if (!shouldTrackLatestProximity({ initialPositionPending: initialLatestPositionPending.current })) return
                   const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
                   const nearLatest = isNearLatestMessage(contentSize.height, layoutMeasurement.height, contentOffset.y)
                   nearLatestMessage.current = nearLatest
                   setShowReturnToLatest(shouldShowReturnToLatest({ hasMessages: messages.length > 0, nearLatest }))
-                  if (!nearLatest) initialLatestPositionPending.current = false
                 }}
                 scrollEventThrottle={16}
               />

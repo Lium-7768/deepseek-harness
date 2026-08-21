@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isNearLatestMessage, shouldScrollToLatest, shouldShowReturnToLatest } from '../src/components/session-scroll-logic.ts'
+import {
+  isNearLatestMessage,
+  shouldScrollToLatest,
+  shouldShowReturnToLatest,
+  shouldTrackLatestProximity,
+} from '../src/components/session-scroll-logic.ts'
 
 describe('session latest-message scroll policy', () => {
   it('positions an opened conversation at the newest message before the first scroll measurement', () => {
@@ -9,6 +14,11 @@ describe('session latest-message scroll policy', () => {
   it('follows late content while the reader remains near the newest message', () => {
     expect(isNearLatestMessage(1_000, 400, 540)).toBe(true)
     expect(shouldScrollToLatest({ hasMessages: true, initialPositionPending: false, nearLatest: true })).toBe(true)
+  })
+
+  it('ignores pre-layout scroll measurements until initial latest positioning completes', () => {
+    expect(shouldTrackLatestProximity({ initialPositionPending: true })).toBe(false)
+    expect(shouldTrackLatestProximity({ initialPositionPending: false })).toBe(true)
   })
 
   it('does not interrupt deliberate history reading away from the newest message', () => {

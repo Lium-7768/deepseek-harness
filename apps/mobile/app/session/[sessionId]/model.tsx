@@ -6,7 +6,7 @@ import { MobileApi, mobileErrorMessage } from '@/api/mobile-api'
 import { NativeModelSelectionGroup, nativeModelSelectionKey } from '@/components/native-model-selection'
 import { NativeActionButton } from '@/components/native-action-button'
 import { NativeIcon } from '@/components/native-icon'
-import { selectionOptionDisabled } from '@/components/session-route-logic'
+import { selectionOptionDisabled, sessionDetailReturnTarget } from '@/components/session-route-logic'
 import { WorkspaceShell } from '@/components/workspace-shell'
 import { useConnectionStore } from '@/state/connection'
 import { useRouteSessionSelection } from '@/state/session-selection'
@@ -36,7 +36,7 @@ export default function SessionModelScreen(): React.JSX.Element {
           accessibilityRole="button"
           accessibilityLabel="返回会话"
           hitSlop={8}
-          onPress={() => router.back()}
+          onPress={() => router.replace(sessionDetailReturnTarget(sessionId))}
           style={styles.back}
         >
           <NativeIcon name="arrow-back" color={mobileTheme.colors.ink} size={20} />
@@ -81,7 +81,7 @@ export default function SessionModelScreen(): React.JSX.Element {
               setSubmitting(key)
               void client
                 .selectSessionModel(sessionId, { provider, model })
-                .then(() => router.back())
+                .then(() => router.replace(sessionDetailReturnTarget(sessionId)))
                 .catch((error) => {
                   setSelectedModel(previous)
                   Alert.alert('模型切换失败', mobileErrorMessage(error, '无法切换模型，请稍后重试。'))
