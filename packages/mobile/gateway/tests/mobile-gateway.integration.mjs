@@ -1,7 +1,32 @@
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
+import { createServer as createHttpServer } from 'node:http'
 import { test } from 'node:test'
+import { WebSocketServer } from 'ws'
 import { MobileGateway } from '../lib/index.mjs'
+
+function createServer(listener) {
+  const server = createHttpServer(listener)
+  const downlinks = new WebSocketServer({ noServer: true })
+  server.on('upgrade', (request, socket, head) => {
+    if (request.url !== '/api/events.mux' && request.url !== '/api/events.host') {
+      socket.destroy()
+      return
+    }
+    downlinks.handleUpgrade(request, socket, head, websocket => {
+      const response = {
+        writeHead() {},
+        write(chunk) {
+          for (const line of String(chunk).split(/\r?\n/)) {
+            if (line.startsWith('data: ')) websocket.send(line.slice(6))
+          }
+        },
+        end() { websocket.close() },
+      }
+      void listener({ url: request.url, method: 'GET', headers: { accept: 'text/event-stream' } }, response)
+    })
+  })
+  return server
+}
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -216,18 +241,12 @@ test('paired devices receive normalized DSH history events', async t => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    assert.equal(request.url, '/api/session.history')
+    const value = request.url === '/api/session.list'
+      ? { items: [{ sessionId: 'session-1', running: false }] }
+      : { events: [{ event: { type: 'message/created', seq: 7, content: 'Fixture history event' } }] }
+    assert.ok(request.url === '/api/session.history' || request.url === '/api/session.list')
     response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(
-      JSON.stringify({
-        type: 'server-response',
-        rpcId: message.rpcId,
-        result: {
-          ok: true,
-          value: { events: [{ event: { type: 'message/created', seq: 7, content: 'Fixture history event' } }] },
-        },
-      }),
-    )
+    response.end(JSON.stringify({ type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } }))
   })
   const dshUrl = await listen(dsh)
   const gateway = new MobileGateway({ dshUrl })
@@ -451,7 +470,7 @@ test('paired devices read the authoritative DSH queue snapshot from the mux stre
 })
 
 
-test('paired devices receive authenticated versioned mux and host SSE events', async t => {
+test('paired devices receive authenticated versioned mux and host WebSocket events', async t => {
   let muxResponse
   let hostResponse
   const dsh = createServer((request, response) => {

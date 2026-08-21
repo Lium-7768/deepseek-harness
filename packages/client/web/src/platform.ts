@@ -9,6 +9,13 @@ export const PLATFORM_MODULES = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-commands/remote',
+  '@deepseek-ai/dsh-goal/remote',
+  '@deepseek-ai/dsh-cordis-host-runner/remote',
+  '@deepseek-ai/dsh-file-reference/remote',
+  '@deepseek-ai/dsh-host-plugin-inventory/remote',
+  '@deepseek-ai/dsh-message-feedback/remote',
+  '@deepseek-ai/dsh-session-reference/remote',
 ] as const
 
 /** Client-bundle specifiers whose factories the parser preloads before the shell starts. */

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import WebSocket from 'ws'
 
 interface RpcFailure {
   ok: false
@@ -70,56 +71,67 @@ export class DshLoopbackClient {
     return receipt
   }
 
-  /** Streams validated DSH mux server requests over the host's SSE downlink. */
+  /** Streams validated DSH mux server requests over the desktop WebSocket downlink. */
   mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
-    return this.#stream('/api/events.mux', 'mux', signal)
+    return this.#stream('/api/events.mux', signal)
   }
 
-  /** Streams validated DSH host server requests over the host's SSE downlink. */
+  /** Streams validated DSH host server requests over the desktop WebSocket downlink. */
   host(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
-    return this.#stream('/api/events.host', 'host', signal)
+    return this.#stream('/api/events.host', signal)
   }
 
   async *#stream(
     path: '/api/events.host' | '/api/events.mux',
-    name: 'host' | 'mux',
     signal: AbortSignal,
   ): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    const response = await fetch(new URL(path, this.#baseUrl), {
-      method: 'GET',
-      headers: { accept: 'text/event-stream', host: this.#baseUrl.host },
-      signal,
-    })
-    if (!response.ok || response.body === null)
-      throw new DshLoopbackError('upstream-unavailable', `DSH SSE ${name} connection failed (HTTP ${response.status}).`)
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
+    const url = new URL(path, this.#baseUrl)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const socket = new WebSocket(url)
+    const inbox: StreamItem[] = []
+    let wake: (() => void) | undefined
+    const enqueue = (item: StreamItem): void => {
+      inbox.push(item)
+      wake?.()
+      wake = undefined
+    }
+    const handleMessage = (data: WebSocket.RawData): void => {
+      const envelope = parseMuxEnvelope(data.toString())
+      if (envelope !== undefined) enqueue({ kind: 'frame', envelope })
+    }
+    const handleClose = (): void => enqueue({ kind: 'end' })
+    const handleError = (): void => undefined
+    const handleAbort = (): void => {
+      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+    }
+    socket.on('message', handleMessage)
+    socket.once('close', handleClose)
+    socket.on('error', handleError)
+    signal.addEventListener('abort', handleAbort, { once: true })
+    if (signal.aborted) handleAbort()
     try {
       while (true) {
-        const { done, value } = await reader.read()
-        if (done) return
-        buffer += decoder.decode(value, { stream: true })
-        let boundary: number
-        while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-          const chunk = buffer.slice(0, boundary)
-          buffer = buffer.slice(boundary + 2)
-          const data = chunk
-            .split('\n')
-            .filter(line => line.startsWith('data: '))
-            .map(line => line.slice(6))
-            .join('')
-          if (data === '') continue
-          const envelope = parseMuxEnvelope(data)
-          if (envelope !== undefined) yield envelope
+        while (inbox.length > 0) {
+          const item = inbox.shift() as StreamItem
+          if (item.kind === 'end') return
+          yield item.envelope
         }
+        await new Promise<void>((resolve) => { wake = resolve })
       }
     } finally {
-      await reader.cancel().catch(() => undefined)
+      signal.removeEventListener('abort', handleAbort)
+      socket.off('message', handleMessage)
+      socket.off('close', handleClose)
+      socket.off('error', handleError)
+      handleAbort()
     }
   }
 }
+
+type StreamItem =
+  | { kind: 'frame'; envelope: { rpcId: string; payload: Record<string, unknown> } }
+  | { kind: 'end' }
 
 function parseMuxEnvelope(data: string): { rpcId: string; payload: Record<string, unknown> } | undefined {
   try {
