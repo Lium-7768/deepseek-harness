@@ -6,6 +6,12 @@
 
 运行 `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` 会生成 `lib/index.mjs` 和 `lib/index.d.mts`。桌面打包流程将该构建后的包复制到桌面运行时；`scripts/mobile-gateway-runtime-payload/` 下的文件是归档快照，不是运行时入口。
 
+## 实时会话投影
+
+`POST /v1/sessions/running` 只返回运行中桌面会话的 ID。已配对客户端通过 `POST /v1/sessions/:sessionId/subscriptions` 创建连接拥有的会话租约，再通过 `POST /v1/subscriptions/:subscriptionId/activate` 激活。租约创建会立即返回 durable 序号水位线、切换事件 ID、激活令牌和 Gateway 拥有的 transient 快照；它不会等待会话 history。
+
+激活期间 Gateway 会验证水位线和令牌，重放缓冲中比水位线更新的 durable 事件，并切换为通过现有认证 `GET /v1/events` SSE 连接实时投递。durable history 仍通过 DSH HTTP 读取。有限缓冲溢出时，移动客户端必须重新读取权威 history，而不会接受静默的事件缺口。
+
 ## 模型体验
 
 ### 提示转发与历史投影

@@ -191,6 +191,38 @@ describe('MobileApi capability requests', () => {
     ])
   })
 
+  it('reads running sessions and creates one encoded session subscription through the paired Gateway', async () => {
+    const api = new MobileApi(connection)
+    await api.runningSessions()
+    await api.createSessionSubscription('session/a', 42)
+    await api.activateSessionSubscription('subscription/a', 'activation-token', 43)
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>
+    expect(
+      calls.map(([url, init]) => ({
+        url: new URL(url).pathname,
+        body: JSON.parse(String(init.body)),
+        authorization: new Headers(init.headers).get('authorization'),
+      })),
+    ).toEqual([
+      {
+        url: '/v1/sessions/running',
+        body: {},
+        authorization: 'Bearer device-1.token-1',
+      },
+      {
+        url: '/v1/sessions/session%2Fa/subscriptions',
+        body: { lastSeenSeq: 42 },
+        authorization: 'Bearer device-1.token-1',
+      },
+      {
+        url: '/v1/subscriptions/subscription%2Fa/activate',
+        body: { activationToken: 'activation-token', appliedSnapshotSeq: 43 },
+        authorization: 'Bearer device-1.token-1',
+      },
+    ])
+  })
+
   it.each([
     ['session-not-found', 404, 'session-not-found', '未找到请求的会话或操作。'],
     ['model-unavailable', 400, 'model-unavailable', '所选模型当前不可用，请重新选择。'],

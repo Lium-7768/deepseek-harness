@@ -24,6 +24,7 @@ const MAX_IMAGE_BASE64_CHARS = 3 * 1024 * 1024
 const MAX_SESSION_SEARCH_CHARS = 500
 const IMAGE_MEDIA_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp'])
 const PAIRING_TTL_MS = 5 * 60 * 1_000
+const MAX_SUBSCRIPTION_BUFFER_EVENTS = 256
 
 type PendingPairing = {
   label: string
@@ -61,6 +62,24 @@ type MobileStreamEvent = {
   snapshot?: true
 }
 
+type SessionSubscription = {
+  subscriptionId: string
+  activationToken: string
+  deviceId: string
+  sessionId: string
+  cutoverEventId: number
+  snapshotSeq: number
+  state: 'hydrating' | 'live'
+  bufferedEvents: MobileStreamEvent[]
+  needsResync: boolean
+}
+
+type MobileEventClient = {
+  response: ServerResponse
+  deviceId: string
+  subscriptions: Map<string, SessionSubscription>
+}
+
 const MOBILE_WRITABLE_SETTINGS = new Set(['ui-theme', 'locale', 'ui-conversation', 'agent-presets', 'permission'])
 
 /** Provides a narrow HTTP API for paired native clients over one local DSH runtime. */
@@ -77,7 +96,8 @@ export class MobileGateway {
   #hostRetry: ReturnType<typeof setTimeout> | undefined
   #nextEventId = 0
   #eventHeartbeat: ReturnType<typeof setInterval> | undefined
-  readonly #eventClients = new Set<ServerResponse>()
+  readonly #eventClients = new Map<ServerResponse, MobileEventClient>()
+  readonly #subscriptions = new Map<string, SessionSubscription>()
   readonly #pairings = new Map<string, PendingPairing>()
   readonly #pending = new Map<string, PendingInteraction>()
   // `session/queue` is an authoritative transient mux snapshot. It is never
@@ -137,8 +157,9 @@ export class MobileGateway {
     this.#hostAbort = undefined
     if (this.#hostRetry !== undefined) clearTimeout(this.#hostRetry)
     this.#hostRetry = undefined
-    for (const client of this.#eventClients) client.end()
+    for (const client of this.#eventClients.values()) client.response.end()
     this.#eventClients.clear()
+    this.#subscriptions.clear()
     this.#stopEventHeartbeat()
     this.#pairings.clear()
     this.#pending.clear()
@@ -213,7 +234,7 @@ export class MobileGateway {
     if (request.method === 'GET' && url.pathname === '/v1/events') {
       this.#startMux()
       this.#startHost()
-      this.#openEventStream(response)
+      this.#openEventStream(response, device.deviceId)
       return
     }
     if (request.method !== 'POST' || request.headers['content-type'] !== 'application/json') {
@@ -221,6 +242,27 @@ export class MobileGateway {
       return
     }
     const body = await readJson(request)
+    const subscription = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subscriptions$/)
+    if (subscription !== null) {
+      const sessionId = decodePathSegment(subscription)
+      writeJson(response, 200, await this.#response(await this.#createSessionSubscription(device.deviceId, sessionId, body)))
+      return
+    }
+    const activation = url.pathname.match(/^\/v1\/subscriptions\/([^/]+)\/activate$/)
+    if (activation !== null) {
+      const subscriptionId = decodePathSegment(activation)
+      const activationToken = requireText(body.activationToken, '缺少订阅激活令牌。')
+      const appliedSnapshotSeq = optionalNonnegativeInteger(body.appliedSnapshotSeq, '快照水位线必须是非负整数。')
+      if (appliedSnapshotSeq === undefined) throw new GatewayHttpError('bad-request', '缺少快照水位线。')
+      const subscription = this.#activateSessionSubscription(
+        device.deviceId,
+        subscriptionId,
+        activationToken,
+        appliedSnapshotSeq,
+      )
+      writeJson(response, 200, await this.#response(subscription))
+      return
+    }
     const pending = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/interactions$/)
     if (pending !== null) {
       this.#startMux()
@@ -234,6 +276,15 @@ export class MobileGateway {
       if (query.length > MAX_SESSION_SEARCH_CHARS || query.includes('\0'))
         throw new GatewayHttpError('bad-request', '搜索词无效或过长。')
       writeJson(response, 200, await this.#response(await this.#dsh.call('session.search', { query })))
+      return
+    }
+    if (url.pathname === '/v1/sessions/running') {
+      const summary = await this.#dsh.call<DshSessionList>('session.list', {})
+      writeJson(
+        response,
+        200,
+        await this.#response({ sessionIds: (summary.items ?? []).filter(item => item.running === true).map(item => item.sessionId) }),
+      )
       return
     }
     if (url.pathname === '/v1/sessions/list') {
@@ -653,14 +704,85 @@ export class MobileGateway {
     this.#hostRetry = retry
   }
 
-  #openEventStream(response: ServerResponse): void {
+  async #createSessionSubscription(
+    deviceId: string,
+    sessionId: string,
+    body: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const lastSeenSeq = optionalNonnegativeInteger(body.lastSeenSeq, '上次事件水位线必须是非负整数。') ?? 0
+    const client = this.#findEventClient(deviceId)
+    if (client === undefined)
+      throw new GatewayHttpError('bad-request', '建立会话订阅前必须先连接移动实时事件流。')
+    const previous = client.subscriptions.get(sessionId)
+    if (previous !== undefined) this.#subscriptions.delete(previous.subscriptionId)
+    const subscription: SessionSubscription = {
+      subscriptionId: randomBytes(18).toString('base64url'),
+      activationToken: randomBytes(32).toString('base64url'),
+      deviceId,
+      sessionId,
+      cutoverEventId: this.#nextEventId,
+      snapshotSeq: lastSeenSeq,
+      state: 'hydrating',
+      bufferedEvents: [],
+      needsResync: false,
+    }
+    client.subscriptions.set(sessionId, subscription)
+    this.#subscriptions.set(subscription.subscriptionId, subscription)
+    const status = [...this.#pending.values()].some(item => item.sessionId === sessionId) ? 'waiting' : 'idle'
+    return {
+      subscriptionId: subscription.subscriptionId,
+      activationToken: subscription.activationToken,
+      snapshotSeq: lastSeenSeq,
+      cutoverEventId: subscription.cutoverEventId.toString(),
+      snapshot: {
+        items: [],
+        status,
+        interactions: [...this.#pending.values()].filter(item => item.sessionId === sessionId),
+        queue: { items: this.#queues.get(sessionId) ?? [] },
+        jobs: { items: this.#jobs.get(sessionId) ?? [] },
+      },
+    }
+  }
+
+  #activateSessionSubscription(
+    deviceId: string,
+    subscriptionId: string,
+    activationToken: string,
+    appliedSnapshotSeq: number,
+  ): { activated: true } {
+    const subscription = this.#subscriptions.get(subscriptionId)
+    if (subscription === undefined || subscription.deviceId !== deviceId)
+      throw new GatewayHttpError('not-found', '会话订阅不存在或已失效。')
+    if (!timingSafeEqual(Buffer.from(subscription.activationToken), Buffer.from(activationToken)))
+      throw new GatewayHttpError('unauthorized', '会话订阅激活令牌无效。')
+    if (subscription.snapshotSeq !== appliedSnapshotSeq)
+      throw new GatewayHttpError('bad-request', '会话订阅快照水位线不匹配，请重新同步。')
+    if (subscription.needsResync)
+      throw new GatewayHttpError('upstream-unavailable', '实时事件缓冲已过期，请重新同步会话。')
+    subscription.state = 'live'
+    const client = this.#findEventClient(deviceId)
+    if (client !== undefined) {
+      for (const event of subscription.bufferedEvents)
+        if (this.#shouldDeliverSubscriptionEvent(subscription, event)) this.#writeStreamEvent(client.response, event)
+    }
+    subscription.bufferedEvents.length = 0
+    return { activated: true }
+  }
+
+  #findEventClient(deviceId: string): MobileEventClient | undefined {
+    for (const client of this.#eventClients.values()) if (client.deviceId === deviceId) return client
+    return undefined
+  }
+
+  #openEventStream(response: ServerResponse, deviceId: string): void {
     response.writeHead(200, {
       'cache-control': 'no-cache, no-transform',
       connection: 'keep-alive',
       'content-type': 'text/event-stream; charset=utf-8',
       'x-accel-buffering': 'no',
     })
-    this.#eventClients.add(response)
+    const client: MobileEventClient = { response, deviceId, subscriptions: new Map() }
+    this.#eventClients.set(response, client)
     this.#startEventHeartbeat()
     this.#writeStreamEvent(response, {
       contractVersion: 1,
@@ -671,6 +793,9 @@ export class MobileGateway {
     })
     response.once('close', () => {
       this.#eventClients.delete(response)
+      for (const subscription of client.subscriptions.values())
+        if (this.#subscriptions.get(subscription.subscriptionId) === subscription)
+          this.#subscriptions.delete(subscription.subscriptionId)
       if (this.#eventClients.size === 0) this.#stopEventHeartbeat()
     })
   }
@@ -680,7 +805,34 @@ export class MobileGateway {
     envelope: { rpcId: string; payload: Record<string, unknown> },
   ): void {
     const event = toMobileStreamEvent(source, envelope, this.#nextStreamEventId())
-    for (const client of this.#eventClients) this.#writeStreamEvent(client, event)
+    for (const client of this.#eventClients.values()) {
+      if (source === 'host' || event.sessionId === undefined) {
+        this.#writeStreamEvent(client.response, event)
+        continue
+      }
+      const subscription = client.subscriptions.get(event.sessionId)
+      if (subscription === undefined) continue
+      if (subscription.state === 'hydrating') {
+        if (Number(event.eventId) > subscription.cutoverEventId) this.#bufferSubscriptionEvent(subscription, event)
+        continue
+      }
+      if (this.#shouldDeliverSubscriptionEvent(subscription, event)) this.#writeStreamEvent(client.response, event)
+    }
+  }
+
+  #bufferSubscriptionEvent(subscription: SessionSubscription, event: MobileStreamEvent): void {
+    if (subscription.bufferedEvents.length >= MAX_SUBSCRIPTION_BUFFER_EVENTS) {
+      subscription.needsResync = true
+      subscription.bufferedEvents.length = 0
+      return
+    }
+    subscription.bufferedEvents.push(event)
+  }
+
+  #shouldDeliverSubscriptionEvent(subscription: SessionSubscription, event: MobileStreamEvent): boolean {
+    if (event.sessionId !== subscription.sessionId) return false
+    if (event.seq !== undefined) return event.seq > subscription.snapshotSeq
+    return Number(event.eventId) > subscription.cutoverEventId
   }
 
   #nextStreamEventId(): string {
@@ -691,7 +843,7 @@ export class MobileGateway {
   #startEventHeartbeat(): void {
     if (this.#eventHeartbeat !== undefined) return
     const heartbeat = setInterval(() => {
-      for (const client of this.#eventClients) client.write(': heartbeat\\n\\n')
+      for (const client of this.#eventClients.values()) client.response.write(': heartbeat\\n\\n')
     }, 2_500)
     heartbeat.unref()
     this.#eventHeartbeat = heartbeat

@@ -77,6 +77,11 @@ export interface SessionListPayload {
   archivedSessionIds: string[]
 }
 
+/** Lightweight desktop running-session snapshot used only to establish live event subscriptions. */
+export interface MobileRunningSessionsPayload {
+  sessionIds: string[]
+}
+
 /** One desktop search hit. Session title and workspace metadata stay owned by SessionListPayload. */
 export interface MobileSessionSearchItem {
   sessionId: string
@@ -191,6 +196,21 @@ export interface SessionEventsPayload {
   since: number
   items: SessionEventItem[]
   status: 'running' | 'waiting' | 'idle'
+}
+
+/** One Gateway-issued hydration lease that transfers a session from durable snapshot to live events. */
+export interface MobileSessionSubscriptionPayload {
+  subscriptionId: string
+  activationToken: string
+  snapshotSeq: number
+  cutoverEventId: string
+  snapshot: {
+    items: SessionEventItem[]
+    status: SessionEventsPayload['status']
+    interactions: PendingInteraction[]
+    queue: MobileQueuePayload
+    jobs: MobileJobsPayload
+  }
 }
 
 export interface DshQuestionOption {

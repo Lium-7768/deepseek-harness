@@ -2,7 +2,7 @@ import { fetch } from 'expo/fetch'
 import { useEffect, useRef } from 'react'
 import { AppState, type AppStateStatus } from 'react-native'
 import { useQueryClient } from '@tanstack/react-query'
-import { mobileAuthorization } from '@/api/mobile-api'
+import { MobileApi, mobileAuthorization } from '@/api/mobile-api'
 import { useConnectionStore } from '@/state/connection'
 import { useMobileSyncStore } from '@/state/mobile-sync'
 import type { MobileStreamEvent, SessionEventItem, SessionEventsPayload } from '@/types/mobile'
@@ -19,6 +19,8 @@ export function MobileSyncBridge(): null {
   const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const retryIndex = useRef(0)
   const seenEventIds = useRef(new Set<string>())
+  const subscribedSessions = useRef(new Set<string>())
+  const subscriptionInFlight = useRef(new Set<string>())
   const setStatus = useMobileSyncStore(state => state.setStatus)
   const markEvent = useMobileSyncStore(state => state.markEvent)
 
@@ -42,8 +44,62 @@ export function MobileSyncBridge(): null {
       }, delay)
     }
 
+    const hydrateSession = (sessionId: string): void => {
+      const current = connectionRef.current
+      if (!current || subscribedSessions.current.has(sessionId) || subscriptionInFlight.current.has(sessionId)) return
+      subscriptionInFlight.current.add(sessionId)
+      const api = new MobileApi(current)
+      const lastSeenSeq = queryClient.getQueryData<SessionEventsPayload>(['session-events', sessionId])?.since ?? 0
+      void api.createSessionSubscription(sessionId, lastSeenSeq)
+        .then((subscription) => {
+          queryClient.setQueryData<SessionEventsPayload>(['session-events', sessionId], existing => ({
+            since: Math.max(existing?.since ?? 0, subscription.snapshotSeq),
+            items: mergeSessionEventItems(existing?.items ?? [], subscription.snapshot.items),
+            status: subscription.snapshot.status,
+          }))
+          queryClient.setQueryData(['session-history', sessionId], existing => ({
+            ...(isRecord(existing) ? existing : {}),
+            items: mergeSessionEventItems(readHistoryItems(existing), subscription.snapshot.items),
+          }))
+          queryClient.setQueryData(['session-queue', sessionId], subscription.snapshot.queue)
+          queryClient.setQueryData(['session-jobs', sessionId], subscription.snapshot.jobs)
+          queryClient.setQueryData(['session-interactions', sessionId], { items: subscription.snapshot.interactions })
+          return api.activateSessionSubscription(
+            subscription.subscriptionId,
+            subscription.activationToken,
+            subscription.snapshotSeq,
+          )
+        })
+        .then(() => {
+          subscribedSessions.current.add(sessionId)
+          void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
+          void queryClient.invalidateQueries({ queryKey: ['session-events', sessionId] })
+        })
+        .catch(() => {
+          void queryClient.invalidateQueries({ queryKey: ['session-history', sessionId] })
+          void queryClient.invalidateQueries({ queryKey: ['session-events', sessionId] })
+          void queryClient.invalidateQueries({ queryKey: ['session-interactions', sessionId] })
+          void queryClient.invalidateQueries({ queryKey: ['session-queue', sessionId] })
+          void queryClient.invalidateQueries({ queryKey: ['session-jobs', sessionId] })
+        })
+        .finally(() => subscriptionInFlight.current.delete(sessionId))
+    }
+
+    const hydrateRunningSessions = (): void => {
+      const current = connectionRef.current
+      if (!current) return
+      const api = new MobileApi(current)
+      void api.runningSessions()
+        .then((snapshot) => {
+          for (const sessionId of snapshot.sessionIds) hydrateSession(sessionId)
+        })
+        .catch(() => undefined)
+    }
+
     const open = (): void => {
       close()
+      subscribedSessions.current.clear()
+      subscriptionInFlight.current.clear()
       const current = connectionRef.current
       if (!current || appState.current !== 'active') {
         setStatus('disconnected')
@@ -56,6 +112,9 @@ export function MobileSyncBridge(): null {
         if (seenEventIds.current.has(event.eventId)) return
         rememberEventId(seenEventIds.current, event.eventId)
         markEvent()
+        if (event.type === 'gateway/ready') hydrateRunningSessions()
+        if (event.type === 'host/session-status' && event.sessionId !== undefined && event.payload.running === true)
+          hydrateSession(event.sessionId)
         applyMobileStreamEvent(queryClient, event)
       })
         .then(() => {
@@ -215,6 +274,24 @@ function isGoalEvent(value: unknown): boolean {
     && !Array.isArray(value)
     && typeof (value as Record<string, unknown>).type === 'string'
     && ((value as Record<string, unknown>).type as string).startsWith('goal/')
+}
+
+function mergeSessionEventItems(existing: SessionEventItem[], incoming: SessionEventItem[]): SessionEventItem[] {
+  const merged = [...existing]
+  for (const item of incoming) {
+    if (item.seq !== undefined && merged.some(current => current.seq === item.seq)) continue
+    merged.push(item)
+  }
+  return merged
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readHistoryItems(value: unknown): SessionEventItem[] {
+  if (!isRecord(value) || !Array.isArray(value.items)) return []
+  return value.items.filter((item): item is SessionEventItem => isRecord(item) && isRecord(item.event))
 }
 
 function appendSessionEvent(queryClient: ReturnType<typeof useQueryClient>, sessionId: string, streamEvent: MobileStreamEvent): void {

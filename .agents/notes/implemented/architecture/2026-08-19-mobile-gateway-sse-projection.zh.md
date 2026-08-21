@@ -6,38 +6,42 @@ Status: implemented
 
 ## Problem
 
-原生移动客户端此前通过多个独立的 2.5 秒查询刷新桌面会话事件、队列状态与待处理交互。不同查询的轮询周期会延迟桌面变更的可见性，也可能短暂地将队列、交互列表与会话状态渲染为来自不同桌面时刻的数据。Gateway 重启后也需要客户端具备明确的恢复路径。
+原生移动客户端需要在不修改 DSH runtime 的前提下映射活跃的桌面和 Web 对话。独立刷新周期会延迟工作状态的可见性；当 durable history 的 HTTP 读取与新建立的事件流并发时，客户端也缺少 history 读取与实时事件之间可证明的交接点。
 
 ## Decision
 
-Mobile Gateway 提供经过认证的 `GET /v1/events` Server-Sent Events 流。它将现有桌面 DSH mux 与 host 下行流规整为版本化移动事件信封，包含临时 Gateway 事件 ID、事件类型、载荷、可选会话 ID、可选 durable 会话序号，以及用于完整状态帧的快照标记。
+`@deepseek-ai/dsh-mobile-gateway` 继续作为 DSH host 与 mux 下行流之上的外置 loopback 投影。它不修改 DSH Agent Loop、会话持久化、Web UI、插件或 wire 协议。`GET /v1/events` 是唯一的移动端长连接传输，并继续全局发布版本化 host 帧。会话 mux 帧只会通过显式的已配对设备订阅发送。
 
-Gateway 仍然是薄投影。它从 DSH 转发会话 durable 事件、主机的会话/工作区状态、队列快照和交互帧。它仅保留现有的待处理交互与队列快照，以服务其狭窄 HTTP API；不拥有会话数据库、回放日志、Agent Loop 或面向客户端的业务状态。
+客户端使用 `POST /v1/sessions/:sessionId/subscriptions` 以及最后已应用的 durable `seq` 建立会话订阅。Gateway 创建一个即时的、连接拥有的租约，其中包含请求水位线、切换事件 ID、激活令牌和有界事件缓冲。租约建立期间不读取 DSH history，因此正在执行的 turn 不会阻塞激活。响应只包含 Gateway 拥有的队列、作业和待处理交互快照；durable history 始终通过权威的 DSH HTTP 读取获得。
 
-React Native 根组件挂载一个 `MobileSyncBridge`。应用处于活动状态时，它使用已配对设备凭据打开一条认证 SSE 连接，仅在一个小型状态库中记录传输存活状态，并更新现有 TanStack Query 缓存。应用进入后台或非活动状态时连接关闭，并以有界退避重连。每次收到 `gateway/ready` 基线后，它会使 durable history 与 transient 快照失效，从而让移动缓存从桌面权威源重新加载。
+客户端将 Gateway 快照写入现有 TanStack Query 缓存，以 `POST /v1/subscriptions/:subscriptionId/activate` 激活租约，随后使 durable history 与会话事件失效。在交接期间，Gateway 缓冲切换事件 ID 之后的 mux 帧。激活会验证令牌和水位线，只重放 `seq` 大于已应用水位线的 durable 事件，并将租约改为实时投递。缓冲区满时租约被标记为需要重新同步，而不会静默丢失事件。
 
-会话事件在 `session-events` 缓存中按 durable 序号去重。队列帧会替换队列缓存，因为它们是主机拥有的完整快照。交互与工作区帧仅使相应查询族失效。会话、交互、队列与权限页面因此移除了高频轮询，同时保留初次 HTTP 读取和手动重试行为。
+`MobileSyncBridge` 保持现有的单一认证 SSE 连接，也不改变任何可视组件。收到 `gateway/ready` 后，它读取 `POST /v1/sessions/running`；该接口只返回运行中会话 ID，避免读取完整工作区和 history 投影。它为这些 ID 以及之后的运行中 `host/session-status` 帧建立租约。重连会清除本地租约记录并重复该恢复路径。
 
 ## Recovery semantics
 
-认证成功后，移动 Gateway 客户端会立即收到 `gateway/ready` 基线。移动应用随后重新获取会话 history、events、interactions、queues 和活动会话列表。durable history 继续使用桌面 `seq` 游标和分页 API；transient 的队列与交互状态重新从桌面快照加载，而不在本地重建。
+durable 事实源仍是 DSH 会话 history 及其 `seq` 游标。移动客户端在激活租约后读取 history，之后只接收较新的 durable 事件。队列、作业和待处理交互是 Gateway 拥有的快照，采用替换而非本地重建。若租约激活报告缓冲已过期或失败，桥接层会使相同会话的查询族失效，使既有 HTTP 读取器收敛到桌面权威状态。
 
-Gateway 会在上游关闭后重连 DSH mux 与 host 流。仅在存在移动 SSE 客户端时保持 host 流重连。Gateway 关闭时会中止上游流、清除重试计时器并关闭下游 SSE 客户端。
+Gateway 会在上游关闭后重连 DSH mux 与 host 流。它只在存在移动 SSE 客户端时维持 host 流。Gateway 关闭时会中止上游流、清除租约和重试状态，并关闭下游客户端。
 
 ## Alternatives considered
 
-**继续使用独立轮询。** 这一方案的传输简单，但会保留可见延迟、冗余请求和相关查询之间的短暂不一致；因此不再适用于活跃会话同步。
+**继续使用独立轮询。** 轮询保留了可见延迟，也可能把来自不同桌面时刻的相关状态组合在一起，且无法为活跃 turn 定义 history 到事件的交接。
 
-**创建独立且持久化的移动 Session Store。** 它可以在本地回放事件，但会复制桌面状态所有权，并在 DSH 之外创建冲突与恢复逻辑。由于桌面/Web 仍是唯一权威源，该方案被拒绝。
+**在创建订阅前读取完整 history。** 活跃 turn 中的 history 读取会延迟原生客户端的租约激活。即时租约加激活后 history 读取保留了 DSH 的 durable 所有权，也不会阻塞实时投递。
 
-**直接向原生客户端公开桌面 mux 协议。** 这会使应用耦合桌面内部 wire 格式，并暴露移动渲染不需要的字段。最终选择 Gateway 特定的版本化信封。
+**创建持久化的移动 Session Store。** 独立移动数据库会复制桌面会话所有权，并在 DSH 外引入冲突解决；客户端只保留 TanStack Query 缓存。
 
-**使用 WebSocket。** 当前不需要双向流式传输，因为移动变更仍通过认证 HTTP 路由发送。SSE 可以保持新增实时通道足够狭窄，并符合原生客户端的生命周期模型。
+**以 Codex App Server 替换 DSH。** Codex App Server 拥有 Codex 的 thread、turn、工具和持久化，无法在不替换当前 runtime 的情况下投影 DSH 会话。其订阅与恢复语义只用于指导本外置适配器，不作为运行时依赖。
+
+**直接向原生客户端公开桌面 mux 协议。** 这会让移动端耦合桌面内部 wire 格式，并暴露配对设备 API 之外的字段。Gateway 保持受限的版本化信封。
 
 ## Verification
 
-Gateway 集成测试验证未认证客户端会被拒绝，认证客户端会通过 `/v1/events` 接收 ready 基线、durable mux 会话事件与 host session-status 帧。现有集成覆盖继续验证消息、history、交互、队列、工作区和图片内容。移动端与 Gateway 的 TypeScript 程序均在严格设置下编译。
+Gateway 集成覆盖验证订阅水位线过滤、切换缓冲、激活重放、会话过滤、认证 host 发现、history、交互、队列、工作区、消息和图片。移动 API 覆盖验证认证后的运行会话发现、订阅创建和激活。移动端 TypeScript 编译通过。
+
+已封装的桌面壳与已配对 iOS 模拟器运行真实 DSH 任务，任务流式输出 150 条中文编号句子。桌面仍在处理时，原生对话已显示部分输出和 `Deep diving...`；任务结束后已显示完整 150 条内容。本决策未修改任何移动页面组件。
 
 ## Consequences
 
-活跃原生页面通过一条认证事件连接更新，而不再依赖多条高频轮询。初次读取和恢复仍基于 HTTP，因此中断流会在重连后收敛到桌面状态。Gateway 事件 ID 有意保持临时性；durable 连续性仍由桌面会话 `seq` 值和 history 分页承担。Goal、Plan、Jobs、Subagent、配对、Token 轮换和跨网络传输仍属于后续独立阶段。
+桌面与 Web 保持 DSH 权威源，移动端则获得可靠的外置映射，无需新增 Agent Loop 或 DSH 源码分叉。租约缓冲有意保持有限；溢出后必须通过 HTTP 重新同步。本地 loopback Gateway 不提供跨网络 relay、TLS 终止、推送通知或多主机协调；这些能力需要单独部署经过认证的 relay。

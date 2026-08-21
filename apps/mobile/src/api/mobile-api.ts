@@ -12,12 +12,14 @@ import type {
   MobilePairingQrPayload,
   MobilePromptContent,
   MobileQueuePayload,
+  MobileRunningSessionsPayload,
   MobileSettingsMutatePayload,
   MobileSettingsNamespaceView,
   MobileSettingsPayload,
   MobileSettingsUpdatePayload,
   MobileSessionModelsPayload,
   MobileSessionSearchPayload,
+  MobileSessionSubscriptionPayload,
   PendingInteractionsPayload,
   SessionEventsPayload,
   SessionHistoryPayload,
@@ -160,6 +162,11 @@ export class MobileApi {
     return this.#post<SessionListPayload>('/v1/sessions/list', {})
   }
 
+  /** Reads only the running desktop session identifiers needed to establish live subscriptions. */
+  runningSessions(): Promise<MobileRunningSessionsPayload> {
+    return this.#post<MobileRunningSessionsPayload>('/v1/sessions/running', {})
+  }
+
   /** Searches the desktop-visible user, assistant, and steering message surface. */
   searchSessions(query: string): Promise<MobileSessionSearchPayload> {
     return this.#post<MobileSessionSearchPayload>('/v1/sessions/search', { query })
@@ -273,6 +280,26 @@ export class MobileApi {
   /** Polls new session events and derives the current status. */
   sessionEvents(sessionId: string, since: number): Promise<SessionEventsPayload> {
     return this.#post<SessionEventsPayload>(`/v1/sessions/${encodeURIComponent(sessionId)}/events`, { since })
+  }
+
+  /** Creates one session-scoped snapshot lease before the live stream may deliver newer events. */
+  createSessionSubscription(sessionId: string, lastSeenSeq: number): Promise<MobileSessionSubscriptionPayload> {
+    return this.#post<MobileSessionSubscriptionPayload>(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/subscriptions`,
+      { lastSeenSeq },
+    )
+  }
+
+  /** Confirms that the native cache committed one subscription snapshot and may now receive its buffered events. */
+  activateSessionSubscription(
+    subscriptionId: string,
+    activationToken: string,
+    appliedSnapshotSeq: number,
+  ): Promise<{ activated: true }> {
+    return this.#post<{ activated: true }>(`/v1/subscriptions/${encodeURIComponent(subscriptionId)}/activate`, {
+      activationToken,
+      appliedSnapshotSeq,
+    })
   }
 
   /** Reads only the current approval and question requests for one DSH session. */

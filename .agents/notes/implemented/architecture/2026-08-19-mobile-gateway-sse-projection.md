@@ -6,38 +6,42 @@ English | [中文](2026-08-19-mobile-gateway-sse-projection.zh.md)
 
 ## Problem
 
-The native mobile client previously refreshed desktop session events, queue state, and pending interactions through independent 2.5-second queries. The separate polling cycles delayed visible desktop changes and could briefly render a queue, interaction list, and session state from different desktop moments. A Gateway restart also needed an explicit client recovery path.
+The native mobile client needs to reflect active desktop and Web conversations without changing the DSH runtime. Independent refresh cycles delayed visible work, while refetching durable history concurrently with a newly opened event stream could leave a client without a defined handoff point between the HTTP read and real-time events.
 
 ## Decision
 
-The Mobile Gateway exposes an authenticated `GET /v1/events` Server-Sent Events stream. It normalizes the existing desktop DSH mux and host downlinks into a versioned mobile event envelope with an ephemeral gateway event id, event type, payload, optional session id, optional durable session sequence, and a snapshot marker for whole-state frames.
+`@deepseek-ai/dsh-mobile-gateway` remains an external loopback projection over DSH host and mux downlinks. It does not change the DSH Agent Loop, session persistence, Web UI, plugins, or wire protocol. `GET /v1/events` is the only long-lived mobile transport and continues to publish versioned host frames globally. Session mux frames are delivered only through an explicit paired-device subscription.
 
-The Gateway remains a thin projection. It forwards session durable events, host session/workspace status, queue snapshots, and interaction frames from DSH. It retains only the existing pending-interaction and queue snapshots needed to serve its narrow HTTP API. It does not own a session database, replay log, Agent Loop, or client-specific business state.
+A client establishes a session subscription with `POST /v1/sessions/:sessionId/subscriptions` and its last durable `seq`. The Gateway creates an immediate, connection-owned lease containing the requested watermark, a cutover event id, an activation token, and a bounded event buffer. It does not read DSH history while creating the lease, so a running turn cannot delay activation. The response carries only Gateway-owned queue, job, and pending-interaction snapshots; durable history remains an authoritative DSH HTTP read.
 
-The React Native root mounts one `MobileSyncBridge`. While the app is active it opens one authenticated SSE connection using the paired-device credential, tracks only transport liveness in a small store, and updates existing TanStack Query caches. It closes on background/inactive lifecycle transitions and reconnects with bounded backoff. On each `gateway/ready` baseline it invalidates durable history and transient snapshots so the mobile cache reloads from the desktop authority.
+The client writes the Gateway snapshots into existing TanStack Query caches, activates the lease with `POST /v1/subscriptions/:subscriptionId/activate`, then invalidates durable history and session events. During the handoff the Gateway buffers mux frames emitted after the cutover id. Activation verifies the token and watermark, replays only durable events whose `seq` is greater than the applied watermark, and changes the lease to live delivery. A full buffer marks the lease for resynchronization instead of silently dropping events.
 
-Session events are deduplicated by their durable sequence in the `session-events` cache. Queue frames replace the queue cache because they are host-owned whole snapshots. Interaction and workspace frames invalidate only their corresponding query families. This removes high-frequency polling from session, interaction, queue, and permission views while preserving initial HTTP reads and manual retry behavior.
+`MobileSyncBridge` keeps the existing single authenticated SSE connection and no visual component changes. On `gateway/ready` it reads `POST /v1/sessions/running`, which returns only running session ids and avoids the complete workspace/history projection. It establishes leases for those ids and for later running `host/session-status` frames. Reconnect clears local lease bookkeeping and repeats this recovery path.
 
 ## Recovery semantics
 
-A mobile Gateway client receives a `gateway/ready` baseline immediately after authentication. The mobile app then refetches session history, events, interactions, queues, and active session lists. Durable history continues to use the desktop `seq` cursor and paging APIs; transient queue and interaction state is reloaded as a desktop snapshot rather than reconstructed locally.
+The durable source remains DSH session history and its `seq` cursor. A mobile client reads history after activating a lease, then receives only newer durable events. Queue, jobs, and pending interactions are Gateway-owned snapshots and are replaced rather than reconstructed. If lease activation reports an expired buffer or fails, the bridge invalidates the same session query families so the existing HTTP readers converge to desktop authority.
 
-The Gateway reconnects its DSH mux and host streams after an upstream closure. Host stream reconnection is only maintained while a mobile SSE client is present. Gateway shutdown aborts upstream streams, clears retry timers, and closes downstream SSE clients.
+The Gateway reconnects DSH mux and host streams after upstream closure. It maintains the host stream only while a mobile SSE client exists. Gateway shutdown aborts upstream streams, clears lease and retry state, and closes downstream clients.
 
 ## Alternatives considered
 
-**Continue independent polling.** It retained a simple transport but left visible latency, redundant requests, and short-lived inconsistencies between related queries. It was rejected for active session synchronization.
+**Continue independent polling.** Polling retained visible delay and could combine related desktop state from different moments. It did not define a history-to-event handoff for an active turn.
 
-**Create a separate persisted mobile Session Store.** It could replay events locally, but would duplicate desktop state ownership and create conflict/recovery logic outside DSH. It was rejected because desktop/Web remains the sole authority.
+**Read full history before opening a subscription.** A history read during an active turn delayed lease activation in the native client. The immediate lease plus post-activation history read keeps durable authority in DSH without blocking real-time delivery.
 
-**Expose the desktop mux protocol directly to native clients.** That would couple the app to a desktop-internal wire format and expose fields not needed by mobile rendering. The Gateway-specific versioned envelope was chosen instead.
+**Create a persisted mobile Session Store.** A separate mobile database would duplicate desktop session ownership and introduce conflict resolution outside DSH. The client keeps TanStack Query caches only.
 
-**Use WebSocket.** Bidirectional streaming is not required because mobile mutations already use authenticated HTTP routes. SSE keeps the new real-time channel narrow and uses the native client's lifecycle model.
+**Replace DSH with Codex App Server.** Codex App Server owns Codex threads, turns, tools, and persistence; it cannot project DSH sessions without replacing the current runtime. Its subscription and recovery semantics informed this external adapter, not a runtime dependency.
+
+**Expose the desktop mux protocol directly to native clients.** That would couple mobile to a desktop-internal wire format and expose fields outside the paired-device API. The Gateway keeps a constrained versioned envelope.
 
 ## Verification
 
-The Gateway integration suite verifies that an unauthenticated client is rejected and an authenticated client receives the ready baseline, a durable mux session event, and a host session-status frame through `/v1/events`. Existing integration coverage continues to exercise messages, history, interactions, queues, workspaces, and image content. Mobile and Gateway TypeScript programs compile with strict settings.
+Gateway integration coverage verifies subscription watermark filtering, cutover buffering, activation replay, session filtering, authenticated host discovery, history, interactions, queues, workspaces, messages, and images. Mobile API coverage verifies authenticated running-session discovery, subscription creation, and activation. Mobile TypeScript compilation passes.
+
+A packaged desktop shell and paired iOS simulator run a real DSH task that streams 150 numbered Chinese lines. The native conversation displays partial output and `Deep diving...` while the desktop task is still processing, then displays all 150 lines after completion. No mobile page component is changed by this decision.
 
 ## Consequences
 
-Active native views update through a single authenticated event connection instead of several high-frequency polls. Initial reads and recovery remain HTTP-based, so an interrupted stream converges to the desktop state on reconnect. The Gateway event id is intentionally ephemeral; durable continuity remains the responsibility of desktop session `seq` values and history paging. Goal, Plan, Jobs, Subagent, pairing, token rotation, and cross-network transport remain separate later phases.
+Desktop and Web remain the DSH authority, while mobile receives a reliable external mapping without an additional Agent Loop or DSH source fork. Lease buffers are deliberately finite and require HTTP resynchronization after overflow. The local loopback Gateway does not provide cross-network relay, TLS termination, push notifications, or multi-host coordination; those require a separately authenticated relay deployment.

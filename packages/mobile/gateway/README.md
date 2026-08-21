@@ -6,6 +6,12 @@ A loopback-only adapter between one desktop DeepSeek Harness runtime and a paire
 
 Run `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` to generate `lib/index.mjs` and `lib/index.d.mts`. The desktop packaging flow copies this built package into the desktop runtime; the source file under `scripts/mobile-gateway-runtime-payload/` is an archival snapshot and is not a runtime entry.
 
+## Real-time session projection
+
+`POST /v1/sessions/running` returns only ids for running desktop sessions. A paired client creates a connection-owned session lease with `POST /v1/sessions/:sessionId/subscriptions`, then activates it with `POST /v1/subscriptions/:subscriptionId/activate`. Lease creation returns immediately with a durable-sequence watermark, cutover event id, activation token, and Gateway-owned transient snapshots; it does not wait for session history.
+
+During activation the Gateway verifies the watermark and token, replays buffered durable events newer than the watermark, and changes the lease to live delivery over the existing authenticated `GET /v1/events` SSE connection. Durable history remains a DSH HTTP read. A bounded buffer that overflows requires the mobile client to reload authoritative history instead of accepting a silent event gap.
+
 ## Model Experience
 
 ### Prompt forwarding and history projection

@@ -470,7 +470,7 @@ test('paired devices read the authoritative DSH queue snapshot from the mux stre
 })
 
 
-test('paired devices receive authenticated versioned mux and host WebSocket events', async t => {
+test('paired devices receive authenticated Host events without unrequested session mux data', async t => {
   let muxResponse
   let hostResponse
   const dsh = createServer((request, response) => {
@@ -521,18 +521,9 @@ test('paired devices receive authenticated versioned mux and host WebSocket even
       payload: { type: 'host/session-status', sessionId: 'session-1', running: true },
     })}\n\n`,
   )
-  const events = await readSseEvents(reader, 3)
+  const events = await readSseEvents(reader, 2)
   assert.deepEqual(events[0], { contractVersion: 1, eventId: '1', type: 'gateway/ready', payload: {}, snapshot: true })
   assert.deepEqual(events[1], {
-    contractVersion: 1,
-    eventId: '2',
-    type: 'session/event',
-    payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 12, type: 'assistant/message' } },
-    rpcId: 'mux-rpc-1',
-    sessionId: 'session-1',
-    seq: 12,
-  })
-  assert.deepEqual(events[2], {
     contractVersion: 1,
     eventId: '3',
     type: 'host/session-status',
@@ -541,6 +532,79 @@ test('paired devices receive authenticated versioned mux and host WebSocket even
   })
   const heartbeat = await readSseChunk(reader)
   assert.match(heartbeat, /: heartbeat/)
+  await reader.cancel()
+})
+
+test('paired session subscriptions replay only events newer than the durable snapshot watermark', async t => {
+  let muxResponse
+  const dsh = createServer(async (request, response) => {
+    if (request.url === '/api/events.mux') {
+      muxResponse = response
+      return
+    }
+    if (request.url === '/api/events.host') return
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    const message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    assert.fail(`unexpected DSH route ${request.url}`)
+  })
+  const dshUrl = await listen(dsh)
+  const gateway = new MobileGateway({ dshUrl })
+  const status = await gateway.start()
+  t.after(async () => {
+    muxResponse?.end()
+    await gateway.stop()
+    await close(dsh)
+  })
+  const credential = gateway.pairDevice('Subscription replay test phone')
+  const headers = {
+    authorization: `Bearer ${credential.deviceId}.${credential.accessToken}`,
+    'content-type': 'application/json',
+  }
+  const stream = await fetch(`${status.url}/v1/events`, { headers })
+  const reader = stream.body?.getReader()
+  assert.ok(reader)
+  const ready = await readSseEvents(reader, 1)
+  assert.equal(ready[0].type, 'gateway/ready')
+  const subscription = fetch(`${status.url}/v1/sessions/session-1/subscriptions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ lastSeenSeq: 6 }),
+  })
+  const created = await subscription
+  assert.equal(created.status, 200)
+  const createdPayload = await created.json()
+  assert.equal(createdPayload.data.snapshotSeq, 6)
+  assert.deepEqual(createdPayload.data.snapshot.items, [])
+  const mux = await eventually(() => muxResponse, 'Gateway did not subscribe to the DSH mux stream for session subscription.')
+  mux.write(`data: ${JSON.stringify({
+    type: 'server-request',
+    rpcId: 'stale-durable-event',
+    payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 6, type: 'assistant/message' } },
+  })}\n\n`)
+  mux.write(`data: ${JSON.stringify({
+    type: 'server-request',
+    rpcId: 'new-durable-event',
+    payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 7, type: 'assistant/message' } },
+  })}\n\n`)
+  await new Promise(resolve => setTimeout(resolve, 25))
+  const activation = await fetch(`${status.url}/v1/subscriptions/${createdPayload.data.subscriptionId}/activate`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ activationToken: createdPayload.data.activationToken, appliedSnapshotSeq: 6 }),
+  })
+  assert.equal(activation.status, 200)
+  assert.deepEqual((await activation.json()).data, { activated: true })
+  const replay = await readSseEvents(reader, 1)
+  assert.deepEqual(replay, [{
+    contractVersion: 1,
+    eventId: '3',
+    type: 'session/event',
+    payload: { type: 'session/event', sessionId: 'session-1', event: { seq: 7, type: 'assistant/message' } },
+    rpcId: 'new-durable-event',
+    sessionId: 'session-1',
+    seq: 7,
+  }])
   await reader.cancel()
 })
 
