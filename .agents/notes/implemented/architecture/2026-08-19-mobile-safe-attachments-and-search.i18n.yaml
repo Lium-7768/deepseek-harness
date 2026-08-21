@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-mobile-safe-attachments-and-search.md
 2026-08-19-mobile-safe-attachments-and-search.md: 42e582a9b35ac4133a81ee08421bb52e2b947c16
-2026-08-19-mobile-safe-attachments-and-search.zh.md: 734111d689e8bf01e54a038286b08e35e488f8f8
+2026-08-19-mobile-safe-attachments-and-search.zh.md: 3f0fe24f972a293cf34ff5f7610988c0886d9e77

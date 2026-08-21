@@ -2,7 +2,7 @@
 
 Status: implemented
 
-中文 | [English](2026-08-19-mobile-agent-observation-control.md)
+[English](2026-08-19-mobile-agent-observation-control.md) | 中文
 
 ## Problem
 

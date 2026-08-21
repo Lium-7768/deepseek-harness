@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-mobile-agent-observation-control.md
 2026-08-19-mobile-agent-observation-control.md: 8735b802b82a8c85851953eb4b1c7bfd2e66f2f5
-2026-08-19-mobile-agent-observation-control.zh.md: 5dda19cfcf38c05de21f5b7f5f1c94980d0edbe4
+2026-08-19-mobile-agent-observation-control.zh.md: 393ef0fcba9051358db92df8991c6b723aa9d116

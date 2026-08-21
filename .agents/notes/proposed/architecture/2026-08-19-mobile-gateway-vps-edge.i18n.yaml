@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-19-mobile-gateway-vps-edge.md
 2026-08-19-mobile-gateway-vps-edge.md: fd119ab66f45f28f807dd908344930263384c875
-2026-08-19-mobile-gateway-vps-edge.zh.md: f21bce2c1c95b925ab31908275d9a473dfb0b2db
+2026-08-19-mobile-gateway-vps-edge.zh.md: 1be0dc6035faf96f1eb7c801e6d87a846e332029

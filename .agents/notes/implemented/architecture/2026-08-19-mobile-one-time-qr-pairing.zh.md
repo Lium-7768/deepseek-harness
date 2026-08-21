@@ -22,7 +22,7 @@ Expo 配置声明中文相机权限文本和 iOS `keychain-access-groups` entitl
 
 配对记录是引导材料，而不是设备凭据。它在五分钟后过期，在签发凭据前即被消费，成功兑换或针对已过期记录的失败兑换后都不能再次使用。长期凭据仍是手机唯一保存的凭据，存放于操作系统安全存储，并继续适用既有的撤销与网关认证行为。
 
-二维码刻意携带网关地址，因为首版跨网络传输仍是后续阶段。配对不会开放桌面 Web GUI 路由或原始桌面 API，不会引入独立移动账号，也不会改变桌面对会话和工作区数据的权威性。事件同步决策仍记录在 [Mobile Gateway SSE projection](2026-08-19-mobile-gateway-sse-projection.md) 中。
+二维码刻意携带网关地址，因为首版跨网络传输仍是后续阶段。配对不会开放桌面 Web GUI 路由或原始桌面 API，不会引入独立移动账号，也不会改变桌面对会话和工作区数据的权威性。事件同步决策仍记录在 [Mobile Gateway SSE projection](2026-08-19-mobile-gateway-sse-projection.zh.md) 中。
 
 ## Alternatives considered
 

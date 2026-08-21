@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-15-native-desktop-mobile-clients.md
 2026-08-15-native-desktop-mobile-clients.md: 595f5359c37bed2517eb9fb9f6a1ac348f9bb0c5
-2026-08-15-native-desktop-mobile-clients.zh.md: cbda39a865ed6faa1ad708197935fd3e10602ad4
+2026-08-15-native-desktop-mobile-clients.zh.md: aba52bfb9045d8e38301d9ae5489c69b71157524

@@ -14,9 +14,9 @@ Status: proposed
 
 桌面使用专用非特权 VPS 账号、专用 SSH 密钥、严格主机密钥校验和 `ExitOnForwardFailure` 启动隧道。反向转发地址明确为 `127.0.0.1:<remote-port>`，因此无法从 VPS 公网接口访问。VPS SSH 账号只允许这一远程转发，不允许 shell、TTY、X11 或公开转发行为。
 
-仅在 VPS 边缘入口通过验证后，桌面环境才将 `DSH_MOBILE_GATEWAY_PUBLIC_URL` 设为 HTTPS 主机名。新配对二维码载荷随后使用该公开 URL，同时保持 [Mobile one-time QR pairing](../../implemented/architecture/2026-08-19-mobile-one-time-qr-pairing.md) 中五分钟单次秘密兑换。已有移动凭据会保留原有网关 URL，并在主机名变更后需要重新配对。
+仅在 VPS 边缘入口通过验证后，桌面环境才将 `DSH_MOBILE_GATEWAY_PUBLIC_URL` 设为 HTTPS 主机名。新配对二维码载荷随后使用该公开 URL，同时保持 [Mobile one-time QR pairing](../../implemented/architecture/2026-08-19-mobile-one-time-qr-pairing.zh.md) 中五分钟单次秘密兑换。已有移动凭据会保留原有网关 URL，并在主机名变更后需要重新配对。
 
-仓库在 [`scripts/mobile-gateway-edge/`](../../../../scripts/mobile-gateway-edge/README.md) 下保存不执行的 Caddy、SSH 隧道、环境变量和 launchd 模板。当前本地 Mac 未因本工作安装 Caddy 服务、TLS 证书、launch daemon、端口转发或代理。部署仍受限于用户提供真实 VPS 和 Cloudflare 托管域名。
+仓库在 [`scripts/mobile-gateway-edge/`](../../../../scripts/mobile-gateway-edge/README.zh.md) 下保存不执行的 Caddy、SSH 隧道、环境变量和 launchd 模板。当前本地 Mac 未因本工作安装 Caddy 服务、TLS 证书、launch daemon、端口转发或代理。部署仍受限于用户提供真实 VPS 和 Cloudflare 托管域名。
 
 ## Alternatives considered
 

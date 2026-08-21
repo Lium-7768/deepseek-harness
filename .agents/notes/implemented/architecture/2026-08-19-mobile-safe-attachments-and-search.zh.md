@@ -2,7 +2,7 @@
 
 Status: implemented
 
-中文 | [English](2026-08-19-mobile-safe-attachments-and-search.md)
+[English](2026-08-19-mobile-safe-attachments-and-search.md) | 中文
 
 ## Problem
 
