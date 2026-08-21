@@ -176,6 +176,8 @@
     "oxlint": "1.76.0",
     "oxlint-tsgolint": "7.0.2001",
     "publint": "^0.3.21",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "smol-toml": "^1.7.1",
     "spdx-expression-parse": "^5.0.0",
     "tsdown": "^0.22.2",
