@@ -30,10 +30,6 @@ overrides:
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
   'rolldown-plugin-dts>@babel/generator': 8.0.0-rc.6
 
-packageExtensions:
-  react-native-worklets@0.10.1:
-    dependencies:
-      '@babel/generator': 7.29.8
 peerDependencyRules:
   allowedVersions:
     typescript: '>=5 <7'
@@ -79,5 +75,4 @@ minimumReleaseAgeExclude:
 allowUnusedPatches: true
 
 patchedDependencies:
-  expo-modules-jsi@57.0.4: patches/expo-modules-jsi@57.0.4.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

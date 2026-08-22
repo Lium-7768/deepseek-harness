@@ -48,7 +48,6 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@opentelemetry/sdk-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@shikijs/langs`](https://github.com/shikijs/shiki) | MIT |
 | [`@standard-schema/spec`](https://github.com/standard-schema/standard-schema) | MIT |
-| [`@tanstack/react-query`](https://github.com/TanStack/query) | MIT |
 | [`@tanstack/react-virtual`](https://github.com/TanStack/virtual) | MIT |
 | [`@types/mdast`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@vscode/ripgrep`](https://github.com/microsoft/vscode-ripgrep) | MIT |
@@ -59,16 +58,6 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
-| [`expo`](https://github.com/expo/expo) | MIT |
-| [`expo-camera`](https://github.com/expo/expo) | MIT |
-| [`expo-clipboard`](https://github.com/expo/expo) | MIT |
-| [`expo-constants`](https://github.com/expo/expo) | MIT |
-| [`expo-file-system`](https://github.com/expo/expo) | MIT |
-| [`expo-image-picker`](https://github.com/expo/expo) | MIT |
-| [`expo-linking`](https://github.com/expo/expo) | MIT |
-| [`expo-router`](https://github.com/expo/expo) | MIT |
-| [`expo-secure-store`](https://github.com/expo/expo) | MIT |
-| [`expo-sharing`](https://github.com/expo/expo) | MIT |
 | [`fflate`](https://github.com/101arrowz/fflate) | MIT |
 | [`immer`](https://github.com/immerjs/immer) | MIT |
 | [`js-yaml`](https://github.com/nodeca/js-yaml) | MIT |
@@ -93,13 +82,6 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`qrcode`](https://github.com/soldair/node-qrcode) | MIT |
 | [`react`](https://github.com/facebook/react) | MIT |
 | [`react-dom`](https://github.com/facebook/react) | MIT |
-| [`react-native`](https://github.com/react/react-native) | MIT |
-| [`react-native-gesture-handler`](https://github.com/software-mansion/react-native-gesture-handler) | MIT |
-| [`react-native-reanimated`](https://github.com/software-mansion/react-native-reanimated) | MIT |
-| [`react-native-safe-area-context`](https://github.com/AppAndFlow/react-native-safe-area-context) | MIT |
-| [`react-native-screens`](https://github.com/software-mansion/react-native-screens) | MIT |
-| [`react-native-svg`](https://github.com/react-native-community/react-native-svg) | MIT |
-| [`react-native-worklets`](https://github.com/software-mansion/react-native-reanimated) | MIT |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
 | [`supports-color`](https://github.com/chalk/supports-color) | MIT |
@@ -114,7 +96,6 @@ External packages that a workspace package resolves at runtime. The tier covers 
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
-- `expo-modules-jsi@57.0.4` — [`patches/expo-modules-jsi@57.0.4.patch`](patches/expo-modules-jsi@57.0.4.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
 
 ## Official Claude Code platform payloads
@@ -141,7 +122,6 @@ External packages **directly declared** only by repository tooling, test infrast
 
 | Package | License |
 | --- | --- |
-| [`@babel/generator`](https://github.com/babel/babel) | MIT |
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
@@ -165,7 +145,7 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`cytoscape`](https://github.com/cytoscape/cytoscape.js) | MIT |
 | [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
 | [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
-| [`debug`](https://github.com/visionmedia/debug) | MIT |
+| [`debug`](https://github.com/debug-js/debug) | MIT |
 | [`electron`](https://github.com/electron/electron) | MIT |
 | [`electron-builder`](https://github.com/electron-userland/electron-builder) | MIT |
 | [`electron-vite`](https://github.com/alex8088/electron-vite) | MIT |
