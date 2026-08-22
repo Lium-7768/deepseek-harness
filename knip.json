@@ -141,9 +141,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-gateway"
       ]
     },
     "packages/client/ui-primitives": {
