@@ -12,7 +12,7 @@ A generated Remote method can expose both a direct form, whose caller supplies a
 
 `packages/api/gateway/src/client/index.ts` selects a direct method first only when all of its strict business codecs accept the supplied positional values. A scoped alias is selected only when its caller Context resolves an identity and its own strict positional form accepts those values. A trailing optional cancellation value counts only when it is a browser-native `AbortSignal`; any other value remains a business-input validation failure and is never supplied to `AbortSignal.any`.
 
-The API Gateway client test covers an explicit direct call from an agent-scoped context. The API Remote matrix mounts the selected production contributions and proves that commands, Goals, file references, and session references preserve their explicit direct wire fields. The file and session reference rows also retain a real cancellation signal. The package README records the direct/scoped selection and cancellation rule.
+The API Gateway client test covers an explicit direct call from an agent-scoped context. The API Remote matrix inventories every contribution selected by the API Remote assembly and fails when its scope or cancellation combinations change. It mounts commands, Goals, file references, and session references to prove their explicit direct wire fields remain intact; the file and session reference rows also retain a real cancellation signal. The package README records the direct/scoped selection and cancellation rule.
 
 ## Alternatives considered
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-23-remote-direct-scope-dispatch.md
-2026-08-23-remote-direct-scope-dispatch.md: 639065f00e0160ecb3e1723bb742261a5c7ed357
-2026-08-23-remote-direct-scope-dispatch.zh.md: 3a2afff16cfb9f0a1aa7200431bea3c04bd741a0
+2026-08-23-remote-direct-scope-dispatch.md: 503d622ced28eeaf17484aba0714c1557cbf8c58
+2026-08-23-remote-direct-scope-dispatch.zh.md: 03cbcbf7a5d5e99998666aafbbe6f9792170086d

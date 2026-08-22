@@ -1,8 +1,11 @@
 import { Context } from '@deepseek-ai/cordis'
 import { inject, apply as applyClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'
+import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
+import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
+import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
@@ -28,12 +31,29 @@ interface RemoteCalls {
   }
 }
 
-const sharedContributions: readonly TypertRemoteContribution[] = [
+const allContributions: readonly TypertRemoteContribution[] = [
+  commandsRemote,
+  goalsRemote,
+  dynamicRemote,
+  fileReferencesRemote,
+  pluginInventoryRemote,
+  messageFeedbackRemote,
+  sessionReferencesRemote,
+]
+
+const invokedContributions: readonly TypertRemoteContribution[] = [
   commandsRemote,
   goalsRemote,
   fileReferencesRemote,
   sessionReferencesRemote,
 ]
+
+function endpointsWithScope(contributions: readonly TypertRemoteContribution[]): readonly string[] {
+  return contributions.flatMap(contribution => contribution.descriptors)
+    .filter(descriptor => descriptor.scope !== undefined)
+    .map(descriptor => `${descriptor.namespace}/${descriptor.method}`)
+    .sort()
+}
 
 function endpointsWithScopedCancellation(contributions: readonly TypertRemoteContribution[]): readonly string[] {
   return contributions.flatMap(contribution => contribution.descriptors)
@@ -44,7 +64,9 @@ function endpointsWithScopedCancellation(contributions: readonly TypertRemoteCon
 
 describe('selected API Remote dispatch matrix', () => {
   it('keeps every direct Agent lookup with cancellation on its explicit direct wire form', async () => {
-    expect(endpointsWithScopedCancellation(sharedContributions)).toEqual([
+    expect(allContributions.flatMap(contribution => contribution.descriptors)).toHaveLength(26)
+    expect(endpointsWithScope(allContributions)).toHaveLength(18)
+    expect(endpointsWithScopedCancellation(allContributions)).toEqual([
       'commands/execute',
       'fileReferences/list',
       'sessionReferenceResolver/candidates',
@@ -62,7 +84,7 @@ describe('selected API Remote dispatch matrix', () => {
       identity: candidate => (candidate as AgentContext).agentId,
     })
     const agentCtx = ctx.extend({ agentId: 'agent-remote-matrix' as SessionId }) as AgentContext
-    const disposers = await Promise.all(sharedContributions.map(contribution => ctx.remote.$mount(contribution)))
+    const disposers = await Promise.all(invokedContributions.map(contribution => ctx.remote.$mount(contribution)))
     const remote = agentCtx.remote as unknown as RemoteCalls
     const cancellation = new AbortController().signal
 
