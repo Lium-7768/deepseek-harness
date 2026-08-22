@@ -124,12 +124,12 @@ export class DshRuntime {
 }
 
 /** Returns only operating-system values required by the DSH child process. */
-export function createChildEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function createChildEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(LOOPBACK_ENVIRONMENT_KEYS.flatMap(key => source[key] === undefined ? [] : [[key, source[key]]]))
 }
 
 /** Parses an optional JSON array supplied for an installed DSH command wrapper. */
-export function parseCommandArgs(value: string | undefined): readonly string[] {
+function parseCommandArgs(value: string | undefined): readonly string[] {
   if (value === undefined || value.trim() === '') return []
   const parsed: unknown = JSON.parse(value)
   if (!Array.isArray(parsed) || parsed.some(argument => typeof argument !== 'string')) throw new Error('DSH_DESKTOP_COMMAND_ARGS must be a JSON array of strings.')

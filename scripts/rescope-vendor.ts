@@ -101,6 +101,8 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
+  // `materializeVendorModule` accepts vendor directory names, not npm package names.
+  { file: 'scripts/prepare-desktop-runtime.ts', upstream: ['cosmokit', 'schemastery'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
   { file: 'scripts/gen-module-graph.ts', upstream: ['cordis'] },
   { file: 'scripts/gen-doc-graphs.ts', upstream: ['cordis'] },
@@ -205,12 +207,12 @@ const EXACT_EDITS: readonly ExactEdit[] = [
         "@deepseek-ai/.+"
       ]
     },
-    "packages/util/home": {`,
+    "packages/host/directory-picker-auto": {`,
     replace: `      "ignoreDependencies": [
         "@deepseek-ai/.+"
       ]
     },
-    "packages/util/home": {`,
+    "packages/host/directory-picker-auto": {`,
     expect: 1,
   },
   {
@@ -348,7 +350,7 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     id: 'vendoring-cookbook-name-invariant-zh',
     file: 'docs/cookbook/adding-a-vendored-package.zh.md',
     find: '保留上游的 `name`/`version`/`exports`/`type`',
-    replace: '改写 `name` 的 scope（[映射](../rescope.md)），保留上游的 `version`/`exports`/`type`',
+    replace: '改写 `name` 的 scope（[映射](../rescope.zh.md)），保留上游的 `version`/`exports`/`type`',
     expect: 1,
   },
   {

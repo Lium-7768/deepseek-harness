@@ -37,6 +37,33 @@
         "scripts/**/*.cjs"
       ]
     },
+    "apps/desktop": {
+      "entry": [
+        "electron.vite.config.ts",
+        "src/main/index.ts",
+        "src/preload/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "apps/desktop-runtime": {
+      "ignoreDependencies": [
+        "@deepseek-ai/.+",
+        "dsh-jsonrpc-agent-pkg",
+        "react",
+        "react-dom"
+      ]
+    },
+    "packages/mobile/gateway": {
+      "entry": [
+        "tests/**/*.test.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.mjs"
+      ]
+    },
     "examples": {
       "entry": [
         "headless-agent/tests/fixtures/cli-mock-llm.ts",
