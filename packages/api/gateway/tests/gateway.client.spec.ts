@@ -286,6 +286,33 @@ describe('Client Typert API', () => {
       { args: { agentId: 'agent-2', request: { objective: 'ship scoped' } } },
       expect.any(AbortSignal),
     )
+    // A browser feature may call the direct method from a session-scoped
+    // context while retaining the explicit agent identity. The second business
+    // argument must not be misread as the scoped alias's optional AbortSignal.
+    await expect(agentCtx.remote.probe.create('agent-explicit', { objective: 'ship direct' }))
+      .resolves.toEqual({ ok: true, value: { ref: 'goal-2' } })
+    expect(call).toHaveBeenLastCalledWith(
+      '/api',
+      'probe/create',
+      { args: { agentId: 'agent-explicit', request: { objective: 'ship direct' } } },
+      expect.any(AbortSignal),
+    )
+    const callerAbort = new AbortController()
+    await expect(agentCtx.remote.probe.create(
+      'agent-explicit',
+      { objective: 'ship direct with cancellation' },
+      callerAbort.signal,
+    )).resolves.toEqual({ ok: true, value: { ref: 'goal-2' } })
+    expect(call).toHaveBeenLastCalledWith(
+      '/api',
+      'probe/create',
+      { args: { agentId: 'agent-explicit', request: { objective: 'ship direct with cancellation' } } },
+      expect.any(AbortSignal),
+    )
+    const createUnsafe = agentCtx.remote.probe.create as unknown as (...args: unknown[]) => Promise<RemoteResult<unknown>>
+    await expect(createUnsafe('agent-explicit', { objective: 'reject non-signal tail' }, [])).rejects.toThrow(
+      'expected 2 business argument(s) plus an optional AbortSignal, got 3',
+    )
     await expect((ctx as FixtureContext).remote.probe.create({ objective: 'wrong scope' }))
       .rejects.toThrow('expected 2 business argument(s)')
 

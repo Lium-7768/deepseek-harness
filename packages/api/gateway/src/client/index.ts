@@ -332,10 +332,17 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     callerCtx: Context,
     values: readonly unknown[],
   ): Promise<RemoteResult<unknown>> {
+    // A direct descriptor and its scoped alias can coexist under one method
+    // name. Select the explicit direct form first when its strict business
+    // arguments match: a session-scoped caller may intentionally retain the
+    // lookup identity, as commands do with `(agentId, line, images)`.
+    if (direct !== undefined && acceptsInvocation(direct.descriptor, undefined, values)) {
+      return this.invoke(direct.descriptor, undefined, direct.token, callerCtx, values)
+    }
     if (scoped !== undefined) {
       const binder = this.ownerCtx.typert.contexts.getClient(scoped.projection.context)
       const identity = binder?.identity(callerCtx)
-      if (identity !== undefined) {
+      if (identity !== undefined && acceptsInvocation(scoped.descriptor, scoped.projection, values)) {
         return this.invoke(
           scoped.descriptor,
           scoped.projection,
@@ -366,7 +373,9 @@ class ClientRemoteService extends Service implements TypertClientRemote {
     const endpoint = endpointOf(descriptor)
     if (!token.active) return withdrawn(endpoint)
     const expected = descriptor.parameters.length - (projection?.parameterIndex === undefined ? 0 : 1)
-    const hasCallerSignal = descriptor.cancellation !== undefined && values.length === expected + 1
+    const hasCallerSignal = descriptor.cancellation !== undefined
+      && values.length === expected + 1
+      && isAbortSignal(values[expected])
     if (values.length !== expected && !hasCallerSignal) {
       const contract = descriptor.cancellation === undefined
         ? `${String(expected)} argument(s)`
@@ -557,6 +566,39 @@ function remoteServiceKey(namespace: string): string {
 
 function endpointOf(descriptor: Pick<InvocationDescriptor, 'namespace' | 'method'>): string {
   return `${descriptor.namespace}/${descriptor.method}`
+}
+
+/** True only for a browser-native cancellation signal accepted by AbortSignal.any. */
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return value instanceof AbortSignal
+}
+
+/**
+ * Test whether positional values fit one direct or scoped descriptor variant.
+ * A non-signal trailing value is never an optional cancellation parameter.
+ */
+function acceptsInvocation(
+  descriptor: InvocationDescriptor,
+  projection: ScopedProjection | undefined,
+  values: readonly unknown[],
+): boolean {
+  const expected = descriptor.parameters.length - (projection?.parameterIndex === undefined ? 0 : 1)
+  const hasCallerSignal = descriptor.cancellation !== undefined
+    && values.length === expected + 1
+    && isAbortSignal(values[expected])
+  if (values.length !== expected && !hasCallerSignal) return false
+  const endpoint = endpointOf(descriptor)
+  let valueIndex = 0
+  try {
+    for (const [parameterIndex, parameter] of descriptor.parameters.entries()) {
+      if (parameterIndex === projection?.parameterIndex) continue
+      parse(parameter.codec, values[valueIndex], endpoint, parameter.wire)
+      valueIndex += 1
+    }
+  } catch {
+    return false
+  }
+  return true
 }
 
 function mountActive(token: MountToken): boolean {
