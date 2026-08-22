@@ -30,7 +30,13 @@ export class DshLoopbackClient {
     this.#baseUrl = parsed
   }
 
-  /** Invokes one allowlisted DSH RPC and returns its business value. */
+  /**
+   * Invokes one allowlisted DSH RPC and returns its business value.
+   * @param method - Allowlisted DSH RPC method name.
+   * @param payload - JSON-serializable request payload forwarded to DSH.
+   * @returns The accepted DSH business value.
+   * @throws {DshLoopbackError} When DSH is unavailable, returns malformed data, or rejects the RPC.
+   */
   async call<T>(method: string, payload: unknown): Promise<T> {
     const rpcId = randomUUID()
     const response = await fetch(new URL(`/api/${method}`, this.#baseUrl), {
@@ -57,7 +63,12 @@ export class DshLoopbackClient {
     return message.result.value
   }
 
-  /** Sends a correlated response to a pending DSH interaction. */
+  /**
+   * Sends a correlated response to a pending DSH interaction.
+   * @param message - Pending RPC identifier and validated interaction result.
+   * @returns DSH's acceptance receipt.
+   * @throws {DshLoopbackError} When DSH is unavailable or rejects the response.
+   */
   async respond(message: { rpcId: string; result: unknown }): Promise<unknown> {
     const response = await fetch(new URL('/api/respond', this.#baseUrl), {
       method: 'POST',
@@ -71,12 +82,20 @@ export class DshLoopbackClient {
     return receipt
   }
 
-  /** Streams validated DSH mux server requests over the desktop WebSocket downlink. */
+  /**
+   * Streams validated DSH mux server requests over the desktop WebSocket downlink.
+   * @param signal - Abort signal that closes the WebSocket and ends the stream.
+   * @returns Mux RPC envelopes until DSH closes the downlink or the signal aborts.
+   */
   mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
     return this.#stream('/api/events.mux', signal)
   }
 
-  /** Streams validated DSH host server requests over the desktop WebSocket downlink. */
+  /**
+   * Streams validated DSH host server requests over the desktop WebSocket downlink.
+   * @param signal - Abort signal that closes the WebSocket and ends the stream.
+   * @returns Host RPC envelopes until DSH closes the downlink or the signal aborts.
+   */
   host(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
     return this.#stream('/api/events.host', signal)
   }
@@ -148,8 +167,11 @@ function parseMuxEnvelope(data: string): { rpcId: string; payload: Record<string
 
 /** An upstream DSH fault translated to a Mobile Gateway-safe error. */
 export class DshLoopbackError extends Error {
+  /** Mobile-safe category distinguishing transport availability from DSH rejection. */
   readonly code: 'upstream-unavailable' | 'upstream-rejected'
+  /** DSH business error code when the upstream RPC rejected the request. */
   readonly upstreamCode: string | undefined
+  /** DSH business error details when the upstream RPC rejected the request. */
   readonly details: unknown | undefined
 
   /**

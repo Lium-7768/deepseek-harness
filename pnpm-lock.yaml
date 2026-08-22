@@ -5982,9 +5982,18 @@ importers:
         specifier: ^8.21.0
         version: 8.21.0
     devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: file:vendor/cordis(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: file:packages/runtime-diagnostics/invariants(@deepseek-ai/cordis@file:vendor/cordis)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

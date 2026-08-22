@@ -4,14 +4,21 @@ import { DshLoopbackClient, DshLoopbackError } from './dsh-loopback-client.ts'
 import { MobileDeviceRegistry } from './device-registry.ts'
 import type { MobileDevice, MobileDeviceCredential, MobileGatewayError, MobileResponse } from './types.ts'
 
+/** Configuration for one loopback-only Mobile Gateway instance. */
 export interface MobileGatewayOptions {
+  /** Base URL of the local desktop DSH runtime. */
   dshUrl: string
+  /** Durable paired-device registry; a new registry is created when omitted. */
   devices?: MobileDeviceRegistry
+  /** Listener host; only loopback addresses are accepted. */
   host?: string
+  /** Listener port; `0` selects an available local port. */
   port?: number
 }
 
+/** Bound listener address available after the Gateway starts. */
 export interface MobileGatewayStatus {
+  /** Authenticated mobile API base URL on the local listener. */
   url: string
 }
 
@@ -118,7 +125,11 @@ export class MobileGateway {
     }
   }
 
-  /** Starts the loopback HTTP listener once. */
+  /**
+   * Starts the loopback HTTP listener once.
+   * @returns The existing or newly bound listener URL.
+   * @throws {Error} When the listener cannot bind a TCP address.
+   */
   async start(): Promise<MobileGatewayStatus> {
     if (this.#status !== undefined) return this.#status
     const server = createServer((request, response) => {
@@ -144,7 +155,10 @@ export class MobileGateway {
     return status
   }
 
-  /** Stops the listener and waits until no request handler remains active. */
+  /**
+   * Stops the listener, ends live event streams, and clears transient device state.
+   * @returns A promise fulfilled after the HTTP server closes.
+   */
   async stop(): Promise<void> {
     const server = this.#server
     this.#server = undefined
@@ -171,12 +185,21 @@ export class MobileGateway {
     )
   }
 
-  /** Creates a credential after a desktop pairing flow confirms the device label. */
+  /**
+   * Creates a durable credential after desktop pairing confirms a device label.
+   * @param label - Human-readable device label shown in desktop settings.
+   * @returns The new device credential, including its bearer token.
+   */
   pairDevice(label: string): MobileDeviceCredential {
     return this.#devices.create(label)
   }
 
-  /** Creates a short-lived, single-use secret that a mobile QR scan exchanges for a device credential. */
+  /**
+   * Creates a short-lived, single-use secret that a mobile QR scan exchanges for a device credential.
+   * @param label - Human-readable device label reserved for the redeemed credential.
+   * @returns Pairing identifier, secret, and expiry timestamp for the QR payload.
+   * @throws {Error} When the label is empty or exceeds the allowed length.
+   */
   createPairing(label: string): { pairingId: string; pairingSecret: string; expiresAt: string } {
     const normalizedLabel = label.trim()
     if (normalizedLabel.length === 0 || normalizedLabel.length > 120)
@@ -189,7 +212,13 @@ export class MobileGateway {
     return { pairingId, pairingSecret, expiresAt: new Date(expiresAt).toISOString() }
   }
 
-  /** Exchanges one unexpired pairing secret for a durable paired-device credential. */
+  /**
+   * Exchanges one unexpired pairing secret for a durable paired-device credential.
+   * @param pairingId - Identifier issued with the QR pairing payload.
+   * @param pairingSecret - Single-use secret supplied by the scanned QR payload.
+   * @returns The new device credential, including its bearer token.
+   * @throws {GatewayHttpError} When the pairing is absent, expired, used, or invalid.
+   */
   redeemPairing(pairingId: string, pairingSecret: string): MobileDeviceCredential {
     this.#prunePairings()
     const pairing = this.#pairings.get(pairingId)
@@ -201,12 +230,19 @@ export class MobileGateway {
     return this.#devices.create(pairing.label)
   }
 
-  /** Lists paired devices for the desktop settings surface. */
+  /**
+   * Lists paired devices for the desktop settings surface.
+   * @returns Immutable device records without bearer tokens.
+   */
   pairedDevices(): readonly MobileDevice[] {
     return this.#devices.list()
   }
 
-  /** Revokes a paired device immediately. */
+  /**
+   * Revokes a paired device immediately.
+   * @param deviceId - Durable identifier of the device to revoke.
+   * @returns `true` when an existing device was revoked.
+   */
   revokeDevice(deviceId: string): boolean {
     return this.#devices.revoke(deviceId)
   }

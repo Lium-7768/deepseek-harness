@@ -1,7 +1,19 @@
 {
   "name": "@deepseek-ai/dsh-desktop-runtime",
-  "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1-rc.1",
+  "description": "Dependency-only deploy root for the packaged DeepSeek Harness desktop runtime.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop-runtime"
+  },
+  "files": [
+    "package.json"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh": "workspace:^",
     "@deepseek-ai/dsh-anonymous-user-id": "workspace:^",

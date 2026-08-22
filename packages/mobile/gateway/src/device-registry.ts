@@ -30,7 +30,12 @@ export class MobileDeviceRegistry {
     }
   }
 
-  /** Creates a device credential after a desktop user has confirmed pairing. */
+  /**
+   * Creates a device credential after a desktop user has confirmed pairing.
+   * @param label - Human-readable label shown for the paired device.
+   * @returns Durable device identifier and one bearer token returned only at creation.
+   * @throws {Error} When the label is empty or exceeds the allowed length.
+   */
   create(label: string): MobileDeviceCredential {
     const normalizedLabel = label.trim()
     if (normalizedLabel.length === 0 || normalizedLabel.length > 120) {
@@ -47,12 +52,18 @@ export class MobileDeviceRegistry {
     return { deviceId, accessToken }
   }
 
-  /** Lists paired devices without returning authentication material. */
+  /**
+   * Lists paired devices without returning authentication material.
+   * @returns Immutable device metadata without bearer tokens or token hashes.
+   */
   list(): readonly MobileDevice[] {
     return [...this.#devices.values()].map(publicDevice)
   }
 
-  /** Returns a durable snapshot containing token hashes but no access tokens. */
+  /**
+   * Returns a durable snapshot containing token hashes but no access tokens.
+   * @returns Persistable device records for restoring the local allowlist.
+   */
   snapshot(): readonly MobileDeviceSnapshot[] {
     return [...this.#devices.values()].map(device => ({
       ...publicDevice(device),
@@ -60,7 +71,11 @@ export class MobileDeviceRegistry {
     }))
   }
 
-  /** Revokes a paired device immediately. */
+  /**
+   * Revokes a paired device immediately.
+   * @param deviceId - Durable identifier of the paired device to revoke.
+   * @returns `true` when an active device was marked revoked.
+   */
   revoke(deviceId: string): boolean {
     const device = this.#devices.get(deviceId)
     if (device === undefined || device.revokedAt !== undefined) return false
@@ -68,7 +83,11 @@ export class MobileDeviceRegistry {
     return true
   }
 
-  /** Verifies a device-bound bearer token without retaining its plaintext. */
+  /**
+   * Verifies a device-bound bearer token without retaining its plaintext.
+   * @param authorization - HTTP Authorization header carrying the device bearer token.
+   * @returns Public device metadata when the token is current, otherwise `undefined`.
+   */
   authenticate(authorization: string | undefined): MobileDevice | undefined {
     const match = authorization?.match(/^Bearer ([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/)
     if (match === null || match === undefined) return undefined

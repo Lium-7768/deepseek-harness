@@ -61,6 +61,12 @@ const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  // electron-vite emits the main and renderer bundles under out; .runtime is the
+  // deploy materialized dependency closure copied into the packaged Electron app.
+  '@deepseek-ai/dsh-desktop': ['out', '.runtime'],
+  // This deploy root owns no source artifact: pnpm deploy materializes its
+  // dependency closure from the manifest before Electron packages it.
+  '@deepseek-ai/dsh-desktop-runtime': ['package.json'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
