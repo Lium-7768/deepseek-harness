@@ -12,7 +12,7 @@ Status: implemented
 
 `packages/api/gateway/src/client/index.ts` 仅在全部严格业务编解码器接受传入位置值时优先选择直接方法。只有调用方 Context 可解析 identity，且作用域别名自身的严格位置形式也接受这些值时，才选择作用域别名。可选的尾随取消值仅在它是浏览器原生 `AbortSignal` 时才成立；其他值仍按业务输入校验，绝不会传给 `AbortSignal.any`。
 
-API Gateway 客户端测试覆盖 agent 作用域中的显式直接调用，证明 agent identity 和 request 保留为直接 wire 字段，而不会移位到作用域别名。包 README 记录了 direct/scoped 选择与取消规则。
+API Gateway 客户端测试覆盖 agent 作用域中的显式直接调用。API Remote 矩阵会装载当前选定的生产贡献，证明命令、Goals、文件引用和会话引用均保留显式直接 wire 字段；文件和会话引用还保留真实取消信号。包 README 记录了 direct/scoped 选择与取消规则。
 
 ## Alternatives considered
 
