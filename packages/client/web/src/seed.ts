@@ -11,15 +11,9 @@ import * as ReactJsxRuntime from 'react/jsx-runtime'
 import * as ReactDom from 'react-dom'
 import * as ReactDomClient from 'react-dom/client'
 import * as Cordis from '@deepseek-ai/cordis'
+import * as ClientStore from '@deepseek-ai/dsh-client-store'
 import * as UiSlots from '@deepseek-ai/dsh-client-ui-slots'
 import * as UiPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
-import CommandsRemote from '@deepseek-ai/dsh-commands/remote'
-import GoalsRemote from '@deepseek-ai/dsh-goal/remote'
-import DynamicCordisRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
-import FileReferenceRemote from '@deepseek-ai/dsh-file-reference/remote'
-import PluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
-import MessageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
-import SessionReferenceRemote from '@deepseek-ai/dsh-session-reference/remote'
 import type { PlatformModule } from './platform.ts'
 
 /**
@@ -36,14 +30,8 @@ export function getStaticModules(): Record<string, unknown> {
     'react-dom': ReactDom,
     'react-dom/client': ReactDomClient,
     '@deepseek-ai/cordis': Cordis,
+    '@deepseek-ai/dsh-client-store': ClientStore,
     '@deepseek-ai/dsh-client-ui-slots': UiSlots,
     '@deepseek-ai/dsh-client-ui-primitives': UiPrimitives,
-    '@deepseek-ai/dsh-commands/remote': CommandsRemote,
-    '@deepseek-ai/dsh-goal/remote': GoalsRemote,
-    '@deepseek-ai/dsh-cordis-host-runner/remote': DynamicCordisRemote,
-    '@deepseek-ai/dsh-file-reference/remote': FileReferenceRemote,
-    '@deepseek-ai/dsh-host-plugin-inventory/remote': PluginInventoryRemote,
-    '@deepseek-ai/dsh-message-feedback/remote': MessageFeedbackRemote,
-    '@deepseek-ai/dsh-session-reference/remote': SessionReferenceRemote,
   } satisfies Record<PlatformModule, unknown>
 }

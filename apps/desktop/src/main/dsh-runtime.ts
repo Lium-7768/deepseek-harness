@@ -72,10 +72,11 @@ export class DshRuntime {
       windowsHide: true,
     })
     this.#child = child
+    const advertisedUrl = captureAdvertisedUrl(child, url)
     try {
-      await waitForHttpReady(url, child, this.#options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS)
+      const readyUrl = await waitForHttpReady(url, child, advertisedUrl, this.#options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS)
       if (child.pid === undefined) throw new Error('DSH exited before the desktop application could record its process id.')
-      const status: DshRuntimeStatus = { state: 'running', url, pid: child.pid }
+      const status: DshRuntimeStatus = { state: 'running', url: readyUrl, pid: child.pid }
       this.#publish(status)
       this.#watchChild(child)
       return status
@@ -148,21 +149,57 @@ async function reserveLoopbackPort(): Promise<number> {
   return address.port
 }
 
-async function waitForHttpReady(url: string, child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<void> {
+function captureAdvertisedUrl(child: ChildProcessWithoutNullStreams, baseUrl: string): { value?: string } {
+  const result: { value?: string } = {}
+  let buffer = ''
+  child.stdout.on('data', chunk => {
+    buffer = `${buffer}${String(chunk)}`.slice(-8_192)
+    const match = /dsh web:\s+(https?:\/\/[^\s]+)/.exec(buffer)
+    const candidate = match?.[1]
+    if (candidate !== undefined && isTrustedAdvertisedUrl(candidate, baseUrl)) result.value = candidate
+  })
+  return result
+}
+
+function isTrustedAdvertisedUrl(candidate: string, baseUrl: string): boolean {
+  try {
+    const actual = new URL(candidate)
+    const expected = new URL(baseUrl)
+    return actual.protocol === expected.protocol
+      && actual.hostname === expected.hostname
+      && actual.port === expected.port
+      && actual.pathname === '/'
+      && actual.searchParams.has('token')
+  } catch {
+    return false
+  }
+}
+
+async function waitForHttpReady(baseUrl: string, child: ChildProcessWithoutNullStreams, advertisedUrl: { value?: string }, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs
   let lastFailure = 'no response received'
   while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`DSH exited before opening ${url}.`)
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`DSH exited before opening ${baseUrl}.`)
+    const candidate = advertisedUrl.value
+    if (candidate !== undefined) {
+      try {
+        const response = await fetch(candidate, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
+        if (response.ok || (response.status >= 300 && response.status < 400)) return candidate
+        lastFailure = `received HTTP ${response.status} from the advertised URL`
+      } catch (error) {
+        lastFailure = errorMessage(error)
+      }
+    }
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) })
-      if (response.ok) return
+      const response = await fetch(baseUrl, { signal: AbortSignal.timeout(1_000) })
+      if (response.ok) return baseUrl
       lastFailure = `received HTTP ${response.status}`
     } catch (error) {
       lastFailure = errorMessage(error)
     }
     await delay(200)
   }
-  throw new Error(`Timed out waiting for DSH at ${url}: ${lastFailure}.`)
+  throw new Error(`Timed out waiting for DSH at ${baseUrl}: ${lastFailure}.`)
 }
 
 async function terminateChild(child: ChildProcessWithoutNullStreams): Promise<void> {

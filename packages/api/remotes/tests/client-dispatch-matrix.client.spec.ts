@@ -1,8 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { inject, apply as applyClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
+import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'
 import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
-import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
@@ -35,7 +35,7 @@ const allContributions: readonly TypertRemoteContribution[] = [
   commandsRemote,
   goalsRemote,
   dynamicRemote,
-  fileReferencesRemote,
+  sessionRemote,
   pluginInventoryRemote,
   messageFeedbackRemote,
   sessionReferencesRemote,
@@ -44,7 +44,7 @@ const allContributions: readonly TypertRemoteContribution[] = [
 const invokedContributions: readonly TypertRemoteContribution[] = [
   commandsRemote,
   goalsRemote,
-  fileReferencesRemote,
+  sessionRemote,
   sessionReferencesRemote,
 ]
 
@@ -64,7 +64,7 @@ function endpointsWithScopedCancellation(contributions: readonly TypertRemoteCon
 
 describe('selected API Remote dispatch matrix', () => {
   it('keeps every direct Agent lookup with cancellation on its explicit direct wire form', async () => {
-    expect(allContributions.flatMap(contribution => contribution.descriptors)).toHaveLength(26)
+    expect(allContributions.flatMap(contribution => contribution.descriptors)).toHaveLength(43)
     expect(endpointsWithScope(allContributions)).toHaveLength(18)
     expect(endpointsWithScopedCancellation(allContributions)).toEqual([
       'commands/execute',
@@ -78,10 +78,15 @@ describe('selected API Remote dispatch matrix', () => {
     })
     const ctx = new Context()
     await ctx.plugin(TypertRegistry)
-    ctx.provide('connection', { rpc: { call } } as never)
+    ctx.provide('connection', {
+      rpc: { call },
+      registerGenerationSource: () => () => {},
+      start: () => ({ stop: () => {} }),
+    } as never)
     await ctx.plugin({ inject, apply: applyClientRemote })
     ctx.typert.contexts.registerClient('agent', {
       identity: candidate => (candidate as AgentContext).agentId,
+      resolve: agentId => agentId === 'agent-remote-matrix' ? agentCtx : undefined,
     })
     const agentCtx = ctx.extend({ agentId: 'agent-remote-matrix' as SessionId }) as AgentContext
     const disposers = await Promise.all(invokedContributions.map(contribution => ctx.remote.$mount(contribution)))
