@@ -1,9 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
-    "noEmit": true,
-    "jsx": "react-jsx"
+    "rootDir": "src",
+    "outDir": "lib/types"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"]
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/util/home-paths" }
+  ]
 }
