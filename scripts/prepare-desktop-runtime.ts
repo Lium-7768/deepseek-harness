@@ -48,7 +48,10 @@ function run(command: string, args: string[]): Promise<void> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, args, { cwd: root, stdio: 'inherit' })
     child.once('error', rejectRun)
-    child.once('exit', code => code === 0 ? resolveRun() : rejectRun(new Error(command + ' exited with code ' + String(code))))
+    child.once('exit', (code) => {
+      if (code === 0) resolveRun()
+      else rejectRun(new Error(command + ' exited with code ' + String(code)))
+    })
   })
 }
 

@@ -34,7 +34,9 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   revokeDevice: (deviceId: string): Promise<boolean> => ipcRenderer.invoke('dsh-desktop:revoke-device', deviceId),
   onRuntimeStatus: (listener: (status: DesktopRuntimeStatus) => void): (() => void) => {
     const channel = 'dsh-desktop:runtime-status'
-    const receiver = (_event: Electron.IpcRendererEvent, status: DesktopRuntimeStatus): void => listener(status)
+    const receiver = (_event: Electron.IpcRendererEvent, status: DesktopRuntimeStatus): void => {
+      listener(status)
+    }
     ipcRenderer.on(channel, receiver)
     return () => ipcRenderer.removeListener(channel, receiver)
   },

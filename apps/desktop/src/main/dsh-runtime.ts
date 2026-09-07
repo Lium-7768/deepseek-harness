@@ -97,7 +97,9 @@ export class DshRuntime {
   }
 
   #watchChild(child: ChildProcessWithoutNullStreams): void {
-    child.once('error', error => this.#recordFailure(child, errorMessage(error)))
+    child.once('error', (error) => {
+      this.#recordFailure(child, errorMessage(error))
+    })
     child.once('exit', (code, signal) => {
       const message = signal === null
         ? `DSH stopped unexpectedly with exit code ${code ?? 'unknown'}.`
@@ -134,17 +136,24 @@ function parseCommandArgs(value: string | undefined): readonly string[] {
   if (value === undefined || value.trim() === '') return []
   const parsed: unknown = JSON.parse(value)
   if (!Array.isArray(parsed) || parsed.some(argument => typeof argument !== 'string')) throw new Error('DSH_DESKTOP_COMMAND_ARGS must be a JSON array of strings.')
-  return parsed
+  return parsed as string[]
 }
 
 async function reserveLoopbackPort(): Promise<number> {
   const server = createServer()
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, DEFAULT_HOST, () => resolve())
+    server.listen(0, DEFAULT_HOST, () => {
+      resolve()
+    })
   })
   const address = server.address()
-  await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)))
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) resolve()
+      else reject(error)
+    })
+  })
   if (address === null || typeof address === 'string') throw new Error('The operating system did not return a loopback port.')
   return address.port
 }
@@ -152,7 +161,7 @@ async function reserveLoopbackPort(): Promise<number> {
 function captureAdvertisedUrl(child: ChildProcessWithoutNullStreams, baseUrl: string): { value?: string } {
   const result: { value?: string } = {}
   let buffer = ''
-  child.stdout.on('data', chunk => {
+  child.stdout.on('data', (chunk) => {
     buffer = `${buffer}${String(chunk)}`.slice(-8_192)
     const match = /dsh web:\s+(https?:\/\/[^\s]+)/.exec(buffer)
     const candidate = match?.[1]
@@ -175,7 +184,12 @@ function isTrustedAdvertisedUrl(candidate: string, baseUrl: string): boolean {
   }
 }
 
-async function waitForHttpReady(baseUrl: string, child: ChildProcessWithoutNullStreams, advertisedUrl: { value?: string }, timeoutMs: number): Promise<string> {
+async function waitForHttpReady(
+  baseUrl: string,
+  child: ChildProcessWithoutNullStreams,
+  advertisedUrl: { value?: string },
+  timeoutMs: number,
+): Promise<string> {
   const deadline = Date.now() + timeoutMs
   let lastFailure = 'no response received'
   while (Date.now() < deadline) {
@@ -207,6 +221,8 @@ async function terminateChild(child: ChildProcessWithoutNullStreams): Promise<vo
   const exited = onceExit(child)
   child.kill('SIGTERM')
   const graceful = await Promise.race([exited.then(() => true), delay(5_000).then(() => false)])
+  // The early return narrows both exit fields to null; SIGTERM above can move them at runtime.
+  // oxlint-disable-next-line typescript/no-unnecessary-condition
   if (!graceful && child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL')
     await exited
@@ -214,7 +230,11 @@ async function terminateChild(child: ChildProcessWithoutNullStreams): Promise<vo
 }
 
 function onceExit(child: ChildProcessWithoutNullStreams): Promise<void> {
-  return new Promise(resolve => child.once('exit', () => resolve()))
+  return new Promise((resolve) => {
+    child.once('exit', () => {
+      resolve()
+    })
+  })
 }
 
 function delay(milliseconds: number): Promise<void> {

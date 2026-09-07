@@ -133,18 +133,23 @@ export class MobileGateway {
   async start(): Promise<MobileGatewayStatus> {
     if (this.#status !== undefined) return this.#status
     const server = createServer((request, response) => {
-      void this.#handle(request, response).catch((error) => {
+      void this.#handle(request, response).catch((error: unknown) => {
         writeError(response, toGatewayError(error))
       })
     })
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
-      server.listen(this.#port, this.#host, () => resolve())
+      server.listen(this.#port, this.#host, () => {
+        resolve()
+      })
     })
     const address = server.address()
     if (address === null || typeof address === 'string') {
       await new Promise<void>((resolve, reject) =>
-        server.close(error => (error === undefined ? resolve() : reject(error))),
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        }),
       )
       throw new Error('The Mobile Gateway did not receive a TCP listener address.')
     }
@@ -181,7 +186,10 @@ export class MobileGateway {
     this.#jobs.clear()
     if (server === undefined) return
     await new Promise<void>((resolve, reject) =>
-      server.close(error => (error === undefined ? resolve() : reject(error))),
+      server.close((error) => {
+        if (error === undefined) resolve()
+        else reject(error)
+      }),
     )
   }
 
@@ -281,7 +289,7 @@ export class MobileGateway {
     const subscription = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subscriptions$/)
     if (subscription !== null) {
       const sessionId = decodePathSegment(subscription)
-      writeJson(response, 200, await this.#response(await this.#createSessionSubscription(device.deviceId, sessionId, body)))
+      writeJson(response, 200, await this.#response(this.#createSessionSubscription(device.deviceId, sessionId, body)))
       return
     }
     const activation = url.pathname.match(/^\/v1\/subscriptions\/([^/]+)\/activate$/)
@@ -740,11 +748,11 @@ export class MobileGateway {
     this.#hostRetry = retry
   }
 
-  async #createSessionSubscription(
+  #createSessionSubscription(
     deviceId: string,
     sessionId: string,
     body: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  ): Record<string, unknown> {
     const lastSeenSeq = optionalNonnegativeInteger(body.lastSeenSeq, '上次事件水位线必须是非负整数。') ?? 0
     const client = this.#findEventClient(deviceId)
     if (client === undefined)
@@ -938,6 +946,8 @@ export class MobileGateway {
     }
   }
 
+  // Every caller awaits this wrapper, and typescript/await-thenable rejects returning the value bare.
+  // oxlint-disable-next-line typescript/require-await
   async #response<T>(data: T): Promise<MobileResponse<T>> {
     return { contractVersion: 1, dshUrl: this.#status?.url ?? '', data }
   }
@@ -955,8 +965,8 @@ class GatewayHttpError extends Error {
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let total = 0
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+  for await (const chunk of request as AsyncIterable<unknown>) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string | Uint8Array)
     total += buffer.byteLength
     if (total > MAX_BODY_BYTES) throw new GatewayHttpError('bad-request', '请求体过大。')
     chunks.push(buffer)
@@ -1184,7 +1194,7 @@ function isExpectedInteractionResponse(interaction: PendingInteraction, result: 
 
 function isPlanReviewRequest(questions: unknown): boolean {
   if (!Array.isArray(questions) || questions.length !== 1) return false
-  const question = questions[0]
+  const question = questions[0] as unknown
   if (question === null || typeof question !== 'object' || Array.isArray(question)) return false
   const value = question as Record<string, unknown>
   if (value.detail === undefined || value.multiSelect === true) return false

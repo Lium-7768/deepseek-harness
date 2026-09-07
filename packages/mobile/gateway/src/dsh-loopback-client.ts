@@ -49,7 +49,7 @@ export class DshLoopbackClient {
     })
     if (!response.ok) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
     const message = (await response.json()) as RpcResponse<T>
-    if (message.type !== 'server-response' || message.rpcId !== rpcId) {
+    if (message.rpcId !== rpcId) {
       throw new DshLoopbackError('upstream-unavailable', 'DSH returned an invalid RPC response.')
     }
     if (!message.result.ok) {
@@ -116,10 +116,17 @@ export class DshLoopbackClient {
       wake = undefined
     }
     const handleMessage = (data: WebSocket.RawData): void => {
-      const envelope = parseMuxEnvelope(data.toString())
+      const text = Array.isArray(data)
+        ? Buffer.concat(data).toString()
+        : data instanceof ArrayBuffer
+          ? new TextDecoder().decode(data)
+          : data.toString()
+      const envelope = parseMuxEnvelope(text)
       if (envelope !== undefined) enqueue({ kind: 'frame', envelope })
     }
-    const handleClose = (): void => enqueue({ kind: 'end' })
+    const handleClose = (): void => {
+      enqueue({ kind: 'end' })
+    }
     const handleError = (): void => undefined
     const handleAbort = (): void => {
       if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
@@ -128,6 +135,8 @@ export class DshLoopbackClient {
     socket.once('close', handleClose)
     socket.on('error', handleError)
     signal.addEventListener('abort', handleAbort, { once: true })
+    // An abort may already have fired between construction and this registration.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (signal.aborted) handleAbort()
     try {
       while (true) {
@@ -172,7 +181,7 @@ export class DshLoopbackError extends Error {
   /** DSH business error code when the upstream RPC rejected the request. */
   readonly upstreamCode: string | undefined
   /** DSH business error details when the upstream RPC rejected the request. */
-  readonly details: unknown | undefined
+  readonly details: unknown
 
   /**
    * @param code - Mobile transport category.

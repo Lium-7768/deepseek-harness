@@ -25,11 +25,13 @@ let quitting = false
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => focusMainWindow())
+  app.on('second-instance', () => {
+    focusMainWindow()
+  })
   void app
     .whenReady()
     .then(startDesktop)
-    .catch((error) => {
+    .catch((error: unknown) => {
       console.error('The desktop application could not start.', error)
       showRuntimeFailure(error)
     })
@@ -43,7 +45,9 @@ app.on('before-quit', (event) => {
   if (quitting) return
   event.preventDefault()
   quitting = true
-  void disposeRuntime().finally(() => app.quit())
+  void disposeRuntime().finally(() => {
+    app.quit()
+  })
 })
 
 async function startDesktop(): Promise<void> {
@@ -124,7 +128,9 @@ function createMainWindow(): void {
     },
   })
   mainWindow = window
-  window.once('ready-to-show', () => window.show())
+  window.once('ready-to-show', () => {
+    window.show()
+  })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
@@ -135,14 +141,21 @@ function loadRuntimePage(status: DshRuntimeStatus): void {
   if (window === undefined || window.isDestroyed()) createMainWindow()
   const target = mainWindow
   if (target === undefined) return
-  void target.loadURL(status.url).catch(error => showRuntimeFailure(error))
+  void target.loadURL(status.url).catch((error: unknown) => {
+    showRuntimeFailure(error)
+  })
 }
 
 function installApplicationMenu(): void {
   const menu = Menu.getApplicationMenu() ?? Menu.buildFromTemplate([])
   menu.insert(
     1,
-    new MenuItem({ label: 'Mobile', submenu: [{ label: 'Mobile devices…', click: () => showControlWindow() }] }),
+    new MenuItem({
+      label: 'Mobile',
+      submenu: [{ label: 'Mobile devices…', click: () => {
+        showControlWindow()
+      } }],
+    }),
   )
   Menu.setApplicationMenu(menu)
 }
@@ -180,7 +193,9 @@ function updateTray(status: DshRuntimeLifecycleStatus): void {
     { label: 'Open DeepSeek Harness', click: focusMainWindow },
     { label: 'Mobile devices…', click: showControlWindow },
     { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
+    { label: 'Quit', click: () => {
+      app.quit()
+    } },
   ])
   tray?.setContextMenu(menu)
   tray?.setToolTip(status.state === 'running' ? 'DeepSeek Harness is running' : `DeepSeek Harness: ${status.state}`)
