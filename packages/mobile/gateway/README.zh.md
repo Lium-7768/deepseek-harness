@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-运行 `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` 会生成 `lib/index.mjs` 和 `lib/index.d.mts`。桌面打包流程将该构建后的包复制到桌面运行时；`scripts/mobile-gateway-runtime-payload/` 下的文件是归档快照，不是运行时入口。
+运行 `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` 会生成 `lib/index.mjs` 和 `lib/index.d.mts`。嵌入方应用在进程内实例化 `MobileGateway`，并自行拥有围绕它的桌面集成。
 
 <a id="real-time-session-projection"></a>
 ## 实时会话投影
@@ -56,7 +56,7 @@ kind: "package-reference"
 
 - **网关限定于本地运行时** —— 它服务于启动它的桌面运行时，不提供云端会话复制或第二个智能体运行时。
 - **移动 API 是允许列表** —— 任意文件系统访问、凭据、不受限制的设置修改和原始终端流等桌面本地能力不属于该适配器。
-- **运行时载荷替换是受控的打包操作** —— 桌面分发必须使用新构建的 `lib/index.mjs`，而不能使用归档快照。
+- **尚无随附的桌面宿主** —— 本仓库的桌面应用不挂载该网关；嵌入方应用必须自行实例化它，并负责配对存储、监听端口和设备凭据持久化。
 
 <a id="dev-note"></a>
 ### 开发备注

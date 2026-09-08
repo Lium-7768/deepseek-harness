@@ -24,7 +24,7 @@ A loopback-only adapter between one desktop DeepSeek Harness runtime and a paire
 <a id="use-this-package"></a>
 ## Use this package
 
-Run `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` to generate `lib/index.mjs` and `lib/index.d.mts`. The desktop packaging flow copies this built package into the desktop runtime; the source file under `scripts/mobile-gateway-runtime-payload/` is an archival snapshot and is not a runtime entry.
+Run `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` to generate `lib/index.mjs` and `lib/index.d.mts`. An embedding application instantiates `MobileGateway` in-process and owns the desktop integration around it.
 
 <a id="real-time-session-projection"></a>
 ## Real-time session projection
@@ -56,7 +56,7 @@ None at the gateway layer; the gateway does not reorder or rewrite model context
 
 - **The gateway is local-runtime scoped** — it serves the desktop runtime that starts it and does not provide cloud session replication or a second agent runtime.
 - **The mobile API is an allowlist** — desktop-local capabilities such as arbitrary filesystem access, credentials, unrestricted settings mutation, and raw terminal streams remain outside the adapter.
-- **Runtime payload replacement is a controlled packaging operation** — a desktop distribution must use a freshly built `lib/index.mjs`, not the archived snapshot.
+- **No shipping desktop host yet** — the repository's desktop application does not mount the gateway; an embedding application must instantiate it and own pairing storage, the listener port, and device credential persistence.
 
 <a id="dev-note"></a>
 ### Dev Note
