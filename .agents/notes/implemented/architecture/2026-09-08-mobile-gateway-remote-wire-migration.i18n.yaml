@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-08-mobile-gateway-remote-wire-migration.md
+2026-09-08-mobile-gateway-remote-wire-migration.md: 6671473e2e30a9861816165cc4121ab0bd8824c8
+2026-09-08-mobile-gateway-remote-wire-migration.zh.md: 17b4387c163c3bb7a53bc2b005b27227feb5ab95

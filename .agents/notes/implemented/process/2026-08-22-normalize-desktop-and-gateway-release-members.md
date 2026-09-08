@@ -14,7 +14,7 @@ The workspace release-member policy already treats `packages/*/*` and `apps/*` a
 
 The Gateway follows the ordinary DSH package layout: TypeScript emits `lib/types`, tsdown emits independent `lib/index.js` and `lib/invariant.js` entries, and the package exports and declares both. Its companion reserves the Gateway package name and documents that no independently observable Cordis event or durable-data relation exists beyond the integration-tested transport behavior.
 
-This decision supersedes the dsh-family access assertions in [the former sequence policy](2026-08-13-public-vendor-and-native-sequences.md). Publication still occurs only through the existing reviewed release path; declaring access metadata does not publish a package.
+This decision supersedes the dsh-family access assertions in [the former sequence policy](../../archived/process/2026-08-13-public-vendor-and-native-sequences.md). Publication still occurs only through the existing reviewed release path; declaring access metadata does not publish a package.
 
 ## Alternatives considered
 

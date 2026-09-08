@@ -10,11 +10,11 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-mobile-gateway` 继续作为 DSH host 与 mux 下行流之上的外置 loopback 投影。它不修改 DSH Agent Loop、会话持久化、Web UI、插件或 wire 协议。`GET /v1/events` 是唯一的移动端长连接传输，并继续全局发布版本化 host 帧。会话 mux 帧只会通过显式的已配对设备订阅发送。
+`@deepseek-ai/dsh-mobile-gateway` 继续作为 DSH Remote 线路协议之上的外置 loopback 投影。它不修改 DSH Agent Loop、会话持久化、Web UI、插件或 wire 协议。`GET /v1/events` 是唯一的移动端长连接传输，并继续全局发布版本化 host 帧。会话事件只会通过显式的已配对设备订阅发送。
 
-客户端使用 `POST /v1/sessions/:sessionId/subscriptions` 以及最后已应用的 durable `seq` 建立会话订阅。Gateway 创建一个即时的、连接拥有的租约，其中包含请求水位线、切换事件 ID、激活令牌和有界事件缓冲。租约建立期间不读取 DSH history，因此正在执行的 turn 不会阻塞激活。响应只包含 Gateway 拥有的队列、作业和待处理交互快照；durable history 始终通过权威的 DSH HTTP 读取获得。
+客户端使用 `POST /v1/sessions/:sessionId/subscriptions` 以及最后已应用的 durable `seq` 建立会话订阅。Gateway 创建一个即时的、连接拥有的租约，其中包含请求水位线、切换事件 ID、激活令牌和有界事件缓冲。租约建立期间不读取 DSH history，因此正在执行的 turn 不会阻塞激活。响应只包含 Gateway 拥有的队列、作业和待处理交互快照；durable history 通过 `session/follow` 快照读取。
 
-客户端将 Gateway 快照写入现有 TanStack Query 缓存，以 `POST /v1/subscriptions/:subscriptionId/activate` 激活租约，随后使 durable history 与会话事件失效。在交接期间，Gateway 缓冲切换事件 ID 之后的 mux 帧。激活会验证令牌和水位线，只重放 `seq` 大于已应用水位线的 durable 事件，并将租约改为实时投递。缓冲区满时租约被标记为需要重新同步，而不会静默丢失事件。
+客户端将 Gateway 快照写入现有 TanStack Query 缓存，以 `POST /v1/subscriptions/:subscriptionId/activate` 激活租约，随后使 durable history 与会话事件失效。在交接期间，Gateway 缓冲切换事件 ID 之后的会话 follow 帧。激活会验证令牌和水位线，只重放 `seq` 大于已应用水位线的 durable 事件，并将租约改为实时投递。缓冲区满时租约被标记为需要重新同步，而不会静默丢失事件。
 
 `MobileSyncBridge` 保持现有的单一认证 SSE 连接，也不改变任何可视组件。收到 `gateway/ready` 后，它读取 `POST /v1/sessions/running`；该接口只返回运行中会话 ID，避免读取完整工作区和 history 投影。它为这些 ID 以及之后的运行中 `host/session-status` 帧建立租约。重连会清除本地租约记录并重复该恢复路径。
 
@@ -22,7 +22,7 @@ Status: implemented
 
 durable 事实源仍是 DSH 会话 history 及其 `seq` 游标。移动客户端在激活租约后读取 history，之后只接收较新的 durable 事件。队列、作业和待处理交互是 Gateway 拥有的快照，采用替换而非本地重建。若租约激活报告缓冲已过期或失败，桥接层会使相同会话的查询族失效，使既有 HTTP 读取器收敛到桌面权威状态。
 
-Gateway 会在上游关闭后重连 DSH mux 与 host 流。它只在存在移动 SSE 客户端时维持 host 流。Gateway 关闭时会中止上游流、清除租约和重试状态，并关闭下游客户端。
+Gateway 会在上游连接关闭后重连其上游流；转发事件、会话控制和工作区 follow 流贯穿网关生命周期运行，按会话 follow 流只在有订阅需要时存在。Gateway 关闭时会中止上游流、清除租约和重试状态，并关闭下游客户端。
 
 ## Alternatives considered
 

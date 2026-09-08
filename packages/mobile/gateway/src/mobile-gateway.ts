@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { DshLoopbackClient, DshLoopbackError } from './dsh-loopback-client.ts'
 import { MobileDeviceRegistry } from './device-registry.ts'
@@ -47,16 +47,52 @@ type PendingInteraction = {
   receivedAt: string
 }
 
-type DshHistory = {
-  events?: Array<{ event?: Record<string, unknown>; view?: unknown }>
-  hasMore?: boolean
-  projections?: unknown
+/** Wire views of the DSH Remote surface; JSON-safe values pass through unmodified. */
+type DshSessionSummary = {
+  sessionId: string
+  updatedAt?: number
+  running?: boolean
+  blank?: boolean
+  title?: string
+  projections?: { asOfSeq?: number; values?: Record<string, unknown> }
+  [key: string]: unknown
 }
-type DshSessionSummary = { sessionId: string; title?: string; running?: boolean; [key: string]: unknown }
-type DshSessionList = { items?: DshSessionSummary[]; [key: string]: unknown }
+type DshSessionList = { items?: DshSessionSummary[] }
 type DshWorkspace = { workspaceId: string; title?: string; path?: string; sessionIds?: string[] }
 type DshWorkspaceList = { items?: DshWorkspace[]; archivedSessionIds?: string[] }
-type DshSubagentHistory = DshHistory
+type DshHistoryRecord = { type?: 'event'; event?: Record<string, unknown> }
+type DshPage = { records?: DshHistoryRecord[]; hasMore?: boolean }
+type DshFollowSnapshot = {
+  type?: 'snapshot'
+  cursor?: number
+  records?: DshHistoryRecord[]
+  hasMore?: boolean
+  projections?: { asOfSeq?: number; values?: Record<string, unknown> }
+}
+type DshModelSelection = { provider: string; model: string; reasoningEffort?: string }
+type DshModelCatalog = {
+  default?: DshModelSelection
+  routableProviders?: string[]
+  groups?: unknown
+  failures?: unknown
+}
+type DshControlFrame =
+  | { type: 'baseline'; value?: { queues?: Record<string, unknown[]>; jobs?: Record<string, unknown[]> } }
+  | { type: 'queue'; sessionId?: string; items?: unknown[] }
+  | { type: 'jobs'; sessionId?: string; jobs?: unknown[] }
+  | { type: 'projection'; sessionId?: string; key?: string; value?: unknown }
+type DshWorkspaceFrame =
+  | { type: 'baseline'; items?: DshWorkspace[]; archivedSessionIds?: string[] }
+  | { type: 'upsert'; workspace?: DshWorkspace }
+  | { type: 'remove'; workspaceId?: string }
+  | { type: 'order'; workspaceIds?: string[] }
+  | { type: 'archived'; archivedSessionIds?: string[] }
+type DshEventFrame =
+  | { type: 'ready'; clientId?: string }
+  | { type: 'emit'; event?: string; args?: unknown[] }
+  | { type: 'waterfall'; event?: string; eventId?: string; agentId?: string; request?: Record<string, unknown> }
+  | { type: 'cancel'; eventId?: string }
+
 type MobileHistoryItem = { seq?: number; event: Record<string, unknown> }
 type MobileStreamEvent = {
   contractVersion: 1
@@ -87,6 +123,11 @@ type MobileEventClient = {
   subscriptions: Map<string, SessionSubscription>
 }
 
+type SessionAddress = { kind: 'session'; sessionId: string }
+  | { kind: 'subagent'; parentSessionId: string; childSessionId: string; mode: 'one-shot' | 'continuable' }
+
+type UpstreamStream = 'events' | 'control' | 'workspace'
+
 const MOBILE_WRITABLE_SETTINGS = new Set(['ui-theme', 'locale', 'ui-conversation', 'agent-presets', 'permission'])
 
 /** Provides a narrow HTTP API for paired native clients over one local DSH runtime. */
@@ -97,22 +138,30 @@ export class MobileGateway {
   readonly #port: number
   #server: Server | undefined
   #status: MobileGatewayStatus | undefined
-  #muxAbort: AbortController | undefined
-  #muxRetry: ReturnType<typeof setTimeout> | undefined
-  #hostAbort: AbortController | undefined
-  #hostRetry: ReturnType<typeof setTimeout> | undefined
+  #eventsAbort: AbortController | undefined
+  #eventsRetry: ReturnType<typeof setTimeout> | undefined
+  #controlAbort: AbortController | undefined
+  #controlRetry: ReturnType<typeof setTimeout> | undefined
+  #workspaceAbort: AbortController | undefined
+  #workspaceRetry: ReturnType<typeof setTimeout> | undefined
+  readonly #follows = new Map<string, { controller: AbortController }>()
+  #clientId: string | undefined
   #nextEventId = 0
   #eventHeartbeat: ReturnType<typeof setInterval> | undefined
   readonly #eventClients = new Map<ServerResponse, MobileEventClient>()
   readonly #subscriptions = new Map<string, SessionSubscription>()
   readonly #pairings = new Map<string, PendingPairing>()
   readonly #pending = new Map<string, PendingInteraction>()
-  // `session/queue` is an authoritative transient mux snapshot. It is never
-  // reconstructed from durable history or written back by the mobile client.
+  // `session/queue` and `session/jobs` are authoritative live snapshots carried
+  // by the DSH control stream. They are never reconstructed from durable
+  // history or written back by the mobile client.
   readonly #queues = new Map<string, unknown[]>()
-  // `session/jobs` is an authoritative transient mux snapshot. It is exposed
-  // read-only and never reconstructed from the durable session log.
   readonly #jobs = new Map<string, unknown[]>()
+  // Per-session projection hints cached from control baselines, projection
+  // updates, and one-shot follow snapshots. Backs model reads and titles.
+  readonly #projections = new Map<string, Record<string, unknown>>()
+  // Workspaces cached from the DSH workspace follow stream.
+  #workspaces: DshWorkspaceList = { items: [], archivedSessionIds: [] }
 
   /** @param options - Loopback DSH and local listener configuration. */
   constructor(options: MobileGatewayOptions) {
@@ -156,7 +205,7 @@ export class MobileGateway {
     this.#server = server
     const status = { url: `http://${this.#host}:${address.port}` }
     this.#status = status
-    this.#startMux()
+    this.#startUpstream()
     return status
   }
 
@@ -168,14 +217,7 @@ export class MobileGateway {
     const server = this.#server
     this.#server = undefined
     this.#status = undefined
-    this.#muxAbort?.abort()
-    this.#muxAbort = undefined
-    if (this.#muxRetry !== undefined) clearTimeout(this.#muxRetry)
-    this.#muxRetry = undefined
-    this.#hostAbort?.abort()
-    this.#hostAbort = undefined
-    if (this.#hostRetry !== undefined) clearTimeout(this.#hostRetry)
-    this.#hostRetry = undefined
+    this.#stopUpstream()
     for (const client of this.#eventClients.values()) client.response.end()
     this.#eventClients.clear()
     this.#subscriptions.clear()
@@ -184,6 +226,8 @@ export class MobileGateway {
     this.#pending.clear()
     this.#queues.clear()
     this.#jobs.clear()
+    this.#projections.clear()
+    this.#workspaces = { items: [], archivedSessionIds: [] }
     if (server === undefined) return
     await new Promise<void>((resolve, reject) =>
       server.close((error) => {
@@ -276,8 +320,7 @@ export class MobileGateway {
       return
     }
     if (request.method === 'GET' && url.pathname === '/v1/events') {
-      this.#startMux()
-      this.#startHost()
+      this.#ensureUpstream()
       this.#openEventStream(response, device.deviceId)
       return
     }
@@ -309,7 +352,7 @@ export class MobileGateway {
     }
     const pending = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/interactions$/)
     if (pending !== null) {
-      this.#startMux()
+      this.#ensureUpstream()
       const sessionId = decodePathSegment(pending)
       const items = [...this.#pending.values()].filter(item => item.sessionId === sessionId)
       writeJson(response, 200, await this.#response({ items }))
@@ -319,32 +362,34 @@ export class MobileGateway {
       const query = requireText(body.query, '搜索词不能为空。')
       if (query.length > MAX_SESSION_SEARCH_CHARS || query.includes('\0'))
         throw new GatewayHttpError('bad-request', '搜索词无效或过长。')
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.search', { query })))
+      writeJson(response, 200, await this.#response(await this.#dsh.call('session/search', { request: { query } })))
       return
     }
     if (url.pathname === '/v1/sessions/running') {
-      const summary = await this.#dsh.call<DshSessionList>('session.list', {})
+      const summary = await this.#dsh.call<DshSessionList>('session/list', { _request: {} })
       writeJson(
         response,
         200,
-        await this.#response({ sessionIds: (summary.items ?? []).filter(item => item.running === true).map(item => item.sessionId) }),
+        await this.#response({
+          sessionIds: (summary.items ?? []).filter(item => item.running === true).map(item => item.sessionId),
+        }),
       )
       return
     }
     if (url.pathname === '/v1/sessions/list') {
-      const [summary, workspaceList] = await Promise.all([
-        this.#dsh.call<DshSessionList>('session.list', {}),
-        this.#dsh.call<DshWorkspaceList>('workspace.list', {}),
+      this.#ensureUpstream()
+      const [summary, sessionList] = await Promise.all([
+        this.#dsh.call<DshSessionList>('session/list', { _request: {} }),
+        Promise.resolve(this.#workspaces),
       ])
-      const items = await Promise.all((summary.items ?? []).map(item => withVisibleSessionMetadata(this.#dsh, item)))
       writeJson(
         response,
         200,
         await this.#response({
           ...summary,
-          items,
-          workspaces: mobileWorkspaces(workspaceList.items ?? []),
-          archivedSessionIds: workspaceList.archivedSessionIds ?? [],
+          items: (summary.items ?? []).map(item => withVisibleSessionMetadata(item, this.#projections.get(item.sessionId))),
+          workspaces: mobileWorkspaces(sessionList.items),
+          archivedSessionIds: sessionList.archivedSessionIds ?? [],
         }),
       )
       return
@@ -355,21 +400,18 @@ export class MobileGateway {
       if (workspaceId !== undefined && cwd !== undefined)
         throw new GatewayHttpError('bad-request', '新会话只能指定工作区或目录。')
       const agentPreset = optionalText(body.agentPreset)
-      writeJson(
-        response,
-        200,
-        await this.#response(
-          await this.#dsh.call('session.create', {
-            ...(workspaceId === undefined ? {} : { workspaceId }),
-            ...(cwd === undefined ? {} : { cwd }),
-            ...(agentPreset === undefined ? {} : { agentPreset }),
-          }),
-        ),
-      )
+      const value = await this.#dsh.call<{ sessionId: string; agentPreset?: string }>('session/create', {
+        request: {
+          ...(workspaceId === undefined ? {} : { workspaceId }),
+          ...(cwd === undefined ? {} : { cwd }),
+          ...(agentPreset === undefined ? {} : { agentPreset }),
+        },
+      })
+      writeJson(response, 200, await this.#response(value))
       return
     }
     if (url.pathname === '/v1/settings/describe') {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('settings.describe', {})))
+      writeJson(response, 200, await this.#response(await this.#dsh.call('settings/describe', {})))
       return
     }
     if (url.pathname === '/v1/settings/update') {
@@ -381,7 +423,7 @@ export class MobileGateway {
         response,
         200,
         await this.#response(
-          await this.#dsh.call('settings.update', {
+          await this.#dsh.call('settings/update', {
             ns,
             patch,
             ...(expectedRevision === undefined ? {} : { expectedRevision }),
@@ -398,40 +440,72 @@ export class MobileGateway {
       writeJson(
         response,
         200,
-        await this.#dsh.call('settings.mutate', {
-          ns,
-          ops,
-          ...(expectedRevision === undefined ? {} : { expectedRevision }),
-        }),
+        await this.#response(
+          await this.#dsh.call('settings/mutate', {
+            ns,
+            ops,
+            ...(expectedRevision === undefined ? {} : { expectedRevision }),
+          }),
+        ),
       )
       return
     }
     if (url.pathname === '/v1/llm/providers') {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('llm.providers', {})))
+      const providers = await this.#dsh.call('llm/listConfigurableProviders', {})
+      writeJson(response, 200, await this.#response({ providers }))
       return
     }
     if (url.pathname === '/v1/llm/models') {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('llm.models', {})))
+      const catalog = await this.#dsh.call<DshModelCatalog>('session/modelCatalog', {})
+      writeJson(response, 200, await this.#response({ groups: catalog.groups ?? [], failures: catalog.failures ?? [] }))
       return
     }
     if (url.pathname === '/v1/agent-presets/list') {
-      writeJson(response, 200, await this.#response(await this.#dsh.call('agentPreset.list', {})))
+      const roster = await this.#dsh.call<{ presets?: unknown; authorable?: boolean }>('agentPresets/list', {})
+      writeJson(
+        response,
+        200,
+        await this.#response({
+          presets: roster.presets ?? [],
+          authorable: roster.authorable === true,
+          hasDocument: false,
+        }),
+      )
       return
     }
     if (url.pathname === '/v1/agent-presets/read') {
       const agentPreset = requireText(body.agentPreset, 'Agent 预设不能为空。')
-      writeJson(response, 200, await this.#response(await this.#dsh.call('agentPreset.read', { agentPreset })))
+      const [content, roster] = await Promise.all([
+        this.#dsh.call<string>('agentPresets/read', { id: agentPreset }),
+        this.#dsh.call<{ presets?: Array<{ id?: string; trust?: string; name?: string; description?: string }> }>(
+          'agentPresets/list',
+          {},
+        ),
+      ])
+      const row = (roster.presets ?? []).find(entry => entry.id === agentPreset)
+      writeJson(
+        response,
+        200,
+        await this.#response({
+          agentPreset,
+          trust: row?.trust === 'system' ? 'system' : 'user',
+          content,
+          ...(row?.name === undefined ? {} : { name: row.name }),
+          ...(row?.description === undefined ? {} : { description: row.description }),
+        }),
+      )
       return
     }
     const queueSnapshot = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/queue$/)
     if (queueSnapshot !== null) {
+      this.#ensureUpstream()
       const sessionId = decodePathSegment(queueSnapshot)
       writeJson(response, 200, await this.#response({ items: this.#queues.get(sessionId) ?? [] }))
       return
     }
     const jobs = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/jobs$/)
     if (jobs !== null) {
-      this.#startMux()
+      this.#ensureUpstream()
       const sessionId = decodePathSegment(jobs)
       writeJson(response, 200, await this.#response({ items: this.#jobs.get(sessionId) ?? [] }))
       return
@@ -443,14 +517,12 @@ export class MobileGateway {
       const mode = requireSubagentMode(body.mode)
       const beforeSeq = optionalNonnegativeInteger(body.beforeSeq, '历史游标必须是非负整数。')
       const maxMessages = optionalPositiveInteger(body.maxMessages, '历史消息数量必须是正整数。')
-      const value = await this.#dsh.call<DshSubagentHistory>('subagent.history', {
-        parentSessionId,
-        childSessionId,
-        mode,
-        ...(beforeSeq === undefined ? {} : { beforeSeq }),
-        ...(maxMessages === undefined ? {} : { maxMessages }),
-      })
-      writeJson(response, 200, await this.#response({ ...value, items: toMobileHistoryItems(value) }))
+      const value = await this.#readHistoryPage(
+        { kind: 'subagent', parentSessionId, childSessionId, mode },
+        beforeSeq,
+        maxMessages,
+      )
+      writeJson(response, 200, await this.#response(value))
       return
     }
     const promptSubagent = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents\/([^/]+)\/messages$/)
@@ -460,10 +532,23 @@ export class MobileGateway {
       if (requireSubagentMode(body.mode) !== 'continuable')
         throw new GatewayHttpError('bad-request', '只有可继续的子 Agent 可以接收消息。')
       const content = readPromptContent(body)
+      const clientTimeZone = optionalText(body.clientTimeZone)
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('subagent.prompt', { parentSessionId, childSessionId, mode: 'continuable', content })),
+        await this.#response(
+          await this.#dsh.call('subagents/prompt', {
+            request: {
+              requestId: randomUUID(),
+              parentSessionId,
+              childSessionId,
+              mode: 'continuable',
+              delivery: 'queue',
+              content,
+              ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
+            },
+          }),
+        ),
       )
       return
     }
@@ -476,14 +561,16 @@ export class MobileGateway {
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('subagent.interrupt', { parentSessionId, childSessionId, mode: 'continuable' })),
+        await this.#response(
+          await this.#dsh.call('subagents/interruptByParent', { childSessionId, parentSessionId, mode: 'continuable' }),
+        ),
       )
       return
     }
     const subagents = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/subagents$/)
     if (subagents !== null) {
       const parentSessionId = decodePathSegment(subagents)
-      writeJson(response, 200, await this.#response(await this.#dsh.call('subagent.list', { parentSessionId })))
+      writeJson(response, 200, await this.#response(await this.#dsh.call('subagents/list', { parentSessionId })))
       return
     }
     const goal = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/goal\/(edit|pause|resume|clear)$/)
@@ -491,13 +578,14 @@ export class MobileGateway {
       const sessionId = decodePathSegment(goal)
       const action = goal[2]
       const ref = requireGoalRef(body.ref)
+      const scopedArgs = { agentId: sessionId, ref } as Record<string, unknown>
       if (action === 'edit') {
         const objective = requireText(body.objective, '目标内容不能为空。')
-        writeJson(response, 200, await this.#response(await this.#dsh.call('goal.edit', { sessionId, ref, objective })))
+        writeJson(response, 200, await this.#response(await this.#dsh.call('goals/edit', { ...scopedArgs, request: { objective } })))
         return
       }
       if (action === 'pause' || action === 'resume' || action === 'clear') {
-        writeJson(response, 200, await this.#response(await this.#dsh.call(`goal.${action}`, { sessionId, ref })))
+        writeJson(response, 200, await this.#response(await this.#dsh.call(`goals/${action}`, scopedArgs)))
         return
       }
       throw new GatewayHttpError('not-found', '未找到请求的移动端操作。')
@@ -509,7 +597,7 @@ export class MobileGateway {
         response,
         200,
         await this.#response(
-          await this.#dsh.call('workspace.rename', { workspaceId: decodePathSegment(renameWorkspace), title }),
+          await this.#dsh.call('workspace/rename', { request: { workspaceId: decodePathSegment(renameWorkspace), title } }),
         ),
       )
       return
@@ -519,7 +607,9 @@ export class MobileGateway {
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('workspace.delete', { workspaceId: decodePathSegment(deleteWorkspace) })),
+        await this.#response(
+          await this.#dsh.call('workspace/delete', { request: { workspaceId: decodePathSegment(deleteWorkspace) } }),
+        ),
       )
       return
     }
@@ -527,23 +617,17 @@ export class MobileGateway {
     if (history !== null) {
       const beforeSeq = optionalNonnegativeInteger(body.beforeSeq, '历史游标必须是非负整数。')
       const maxMessages = optionalPositiveInteger(body.maxMessages, '历史消息数量必须是正整数。')
-      const value = await this.#dsh.call<DshHistory>('session.history', {
-        sessionId: decodePathSegment(history),
-        ...(beforeSeq === undefined ? {} : { beforeSeq }),
-        ...(maxMessages === undefined ? {} : { maxMessages }),
-      })
-      writeJson(response, 200, await this.#response({ ...value, items: toMobileHistoryItems(value) }))
+      const value = await this.#readHistoryPage({ kind: 'session', sessionId: decodePathSegment(history) }, beforeSeq, maxMessages)
+      writeJson(response, 200, await this.#response(value))
       return
     }
     const events = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/events$/)
     if (events !== null) {
       const since = typeof body.since === 'number' && Number.isInteger(body.since) && body.since >= 0 ? body.since : 0
       const sessionId = decodePathSegment(events)
-      const [history, summary] = await Promise.all([
-        this.#dsh.call<DshHistory>('session.history', { sessionId }),
-        this.#dsh.call<DshSessionList>('session.list', {}),
-      ])
-      const items = toMobileHistoryItems(history).filter(item => typeof item.seq !== 'number' || item.seq > since)
+      const value = await this.#readHistoryPage({ kind: 'session', sessionId }, undefined, undefined)
+      const items = toMobileHistoryItems(value.events).filter(item => typeof item.seq !== 'number' || item.seq > since)
+      const summary = await this.#dsh.call<DshSessionList>('session/list', { _request: {} })
       const running = summary.items?.some(item => item.sessionId === sessionId && item.running === true) === true
       const status = [...this.#pending.values()].some(item => item.sessionId === sessionId)
         ? 'waiting'
@@ -558,7 +642,7 @@ export class MobileGateway {
         response,
         200,
         await this.#response(
-          await this.#dsh.call('session.rename', { sessionId: decodePathSegment(rename), title }),
+          await this.#dsh.call('session/rename', { request: { sessionId: decodePathSegment(rename), title } }),
         ),
       )
       return
@@ -570,9 +654,11 @@ export class MobileGateway {
         response,
         200,
         await this.#response(
-          await this.#dsh.call('session.fork', {
-            sessionId: decodePathSegment(fork),
-            ...(atSeq === undefined ? {} : { atSeq }),
+          await this.#dsh.call('session/fork', {
+            request: {
+              sessionId: decodePathSegment(fork),
+              ...(atSeq === undefined ? {} : { atSeq }),
+            },
           }),
         ),
       )
@@ -583,7 +669,9 @@ export class MobileGateway {
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('workspace.archiveSession', { sessionId: decodePathSegment(archive) })),
+        await this.#response(
+          await this.#dsh.call('workspace/archiveSession', { request: { sessionId: decodePathSegment(archive) } }),
+        ),
       )
       return
     }
@@ -592,7 +680,11 @@ export class MobileGateway {
       const sessionId = decodeURIComponent(attachment[1] ?? '')
       const attachmentId = decodeURIComponent(attachment[2] ?? '')
       if (sessionId === '' || attachmentId === '') throw new GatewayHttpError('bad-request', '附件路径无效。')
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.attachment', { sessionId, attachmentId })))
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('session/attachment', { request: { sessionId, attachmentId } })),
+      )
       return
     }
     const updateQueue = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/queue\/([^/]+)$/)
@@ -601,15 +693,26 @@ export class MobileGateway {
       const itemId = decodeURIComponent(updateQueue[2] ?? '')
       if (sessionId === '' || itemId === '') throw new GatewayHttpError('bad-request', '队列路径无效。')
       const action = requireObject(body.action, '队列操作不能为空。')
-      writeJson(response, 200, await this.#response(await this.#dsh.call('session.updateQueue', { sessionId, itemId, action })))
+      writeJson(
+        response,
+        200,
+        await this.#response(await this.#dsh.call('session/updateQueue', { request: { sessionId, itemId, action } })),
+      )
       return
     }
     const models = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/models$/)
     if (models !== null) {
+      const sessionId = decodePathSegment(models)
+      const catalog = await this.#dsh.call<DshModelCatalog>('session/modelCatalog', {})
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('session.models', { sessionId: decodePathSegment(models) })),
+        await this.#response({
+          current: this.#projectedModelSelection(sessionId) ?? catalog.default,
+          routable: catalog.routableProviders ?? [],
+          groups: catalog.groups ?? [],
+          failures: catalog.failures ?? [],
+        }),
       )
       return
     }
@@ -622,11 +725,13 @@ export class MobileGateway {
         response,
         200,
         await this.#response(
-          await this.#dsh.call('session.selectModel', {
-            sessionId: decodePathSegment(selectModel),
-            provider,
-            model,
-            ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+          await this.#dsh.call('session/selectModel', {
+            request: {
+              sessionId: decodePathSegment(selectModel),
+              provider,
+              model,
+              ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+            },
           }),
         ),
       )
@@ -635,26 +740,29 @@ export class MobileGateway {
     const selectPreset = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/agent-preset$/)
     if (selectPreset !== null) {
       const agentPreset = requireText(body.agentPreset, 'Agent 预设不能为空。')
-      writeJson(
-        response,
-        200,
-        await this.#response(
-          await this.#dsh.call('agentPreset.select', { sessionId: decodePathSegment(selectPreset), agentPreset }),
-        ),
-      )
+      const selected = await this.#dsh.call<string>('agentPresets/select', {
+        agentId: decodePathSegment(selectPreset),
+        agentPreset,
+      })
+      writeJson(response, 200, await this.#response({ agentPreset: selected }))
       return
     }
     const prompt = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/messages$/)
     if (prompt !== null) {
       const content = readPromptContent(body)
+      const clientTimeZone = optionalText(body.clientTimeZone)
       writeJson(
         response,
         200,
         await this.#response(
-          await this.#dsh.call('session.prompt', {
-            sessionId: decodePathSegment(prompt),
-            mode: 'queue',
-            content,
+          await this.#dsh.call('session/prompt', {
+            request: {
+              requestId: randomUUID(),
+              sessionId: decodePathSegment(prompt),
+              mode: 'queue',
+              content,
+              ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
+            },
           }),
         ),
       )
@@ -665,87 +773,514 @@ export class MobileGateway {
       writeJson(
         response,
         200,
-        await this.#response(await this.#dsh.call('session.cancel', { sessionId: decodePathSegment(cancellation) })),
+        await this.#response(
+          await this.#dsh.call('session/cancel', { request: { sessionId: decodePathSegment(cancellation) } }),
+        ),
       )
       return
     }
     if (url.pathname === '/v1/interactions/respond') {
       const rpcId = typeof body.rpcId === 'string' ? body.rpcId : ''
       const interaction = this.#pending.get(rpcId)
-
       if (interaction === undefined || !isExpectedInteractionResponse(interaction, body.result)) {
         throw new GatewayHttpError('bad-request', '响应与当前的权限或问题请求不匹配。')
       }
-      const receipt = await this.#dsh.respond({ rpcId, result: body.result })
+      const receipt = await this.#answerInteraction(interaction, body.result)
       this.#pending.delete(rpcId)
+      this.#broadcast(interaction.type === 'approval/requested'
+        ? {
+          contractVersion: 1,
+          eventId: this.#nextStreamEventId(),
+          type: 'approval/resolved',
+          payload: { approvalId: rpcId },
+          rpcId,
+          sessionId: interaction.sessionId,
+        }
+        : {
+          contractVersion: 1,
+          eventId: this.#nextStreamEventId(),
+          type: 'question/resolved',
+          payload: { questionRpcId: rpcId },
+          rpcId,
+          sessionId: interaction.sessionId,
+        })
       writeJson(response, 200, await this.#response(receipt))
+      return
+    }
+    const feedback = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/feedback\/(list|put|delete)$/)
+    if (feedback !== null) {
+      const action = feedback[2]
+      if (action === 'list') {
+        writeJson(
+          response,
+          200,
+          await this.#response(await this.#dsh.call('messageFeedback/list', { request: { sessionId: decodePathSegment(feedback) } })),
+        )
+        return
+      }
+      if (action === 'put') {
+        const messageId = requireText(body.messageId, '消息标识不能为空。')
+        const rating = body.rating === 'positive' || body.rating === 'negative' || typeof body.rating === 'string'
+          ? body.rating
+          : undefined
+        if (rating === undefined) throw new GatewayHttpError('bad-request', '反馈评级无效。')
+        const note = optionalText(body.note)
+        const ifVersion = body.ifVersion === null || typeof body.ifVersion === 'string' ? body.ifVersion : undefined
+        writeJson(
+          response,
+          200,
+          await this.#response(
+            await this.#dsh.call('messageFeedback/put', {
+              request: {
+                sessionId: decodePathSegment(feedback),
+                messageId,
+                rating,
+                ...(note === undefined ? {} : { note }),
+                ifVersion: ifVersion ?? null,
+              },
+            }),
+          ),
+        )
+        return
+      }
+      const messageId = requireText(body.messageId, '消息标识不能为空。')
+      const ifVersion = typeof body.ifVersion === 'string' ? body.ifVersion : undefined
+      if (ifVersion === undefined) throw new GatewayHttpError('bad-request', '缺少反馈版本。')
+      writeJson(
+        response,
+        200,
+        await this.#response(
+          await this.#dsh.call('messageFeedback/delete', { request: { sessionId: decodePathSegment(feedback), messageId, ifVersion } }),
+        ),
+      )
       return
     }
     writeError(response, { code: 'not-found', message: '未找到请求的移动端操作。' })
   }
 
-  #startMux(): void {
-    if (this.#muxAbort !== undefined || this.#status === undefined) return
+  /**
+   * Reads one message-aligned history page for a durable address without a
+   * live follow. The one-shot follow snapshot supplies the log cursor, and
+   * backward pages read through `session/page`.
+   * @param address - Durable session or subagent address.
+   * @param beforeSeq - Exclusive upper bound for older pages, when given.
+   * @param maxMessages - Message-aligned window budget, when given.
+   * @returns Mobile history items with pagination metadata.
+   */
+  async #readHistoryPage(
+    address: SessionAddress,
+    beforeSeq: number | undefined,
+    maxMessages: number | undefined,
+  ): Promise<{ events: DshHistoryRecord[]; hasMore?: boolean; projections?: unknown; items: MobileHistoryItem[] }> {
     const controller = new AbortController()
-    this.#muxAbort = controller
-    void this.#captureMux(controller)
-  }
-
-  #startHost(): void {
-    if (this.#hostAbort !== undefined || this.#status === undefined) return
-    const controller = new AbortController()
-    this.#hostAbort = controller
-    void this.#captureHost(controller)
-  }
-
-  async #captureMux(controller: AbortController): Promise<void> {
     try {
-      for await (const envelope of this.#dsh.mux(controller.signal)) {
-        this.#rememberInteraction(envelope)
-        this.#broadcast('mux', envelope)
+      for await (const frame of this.#dsh.open(
+        'session/follow',
+        { request: { address, ...(maxMessages === undefined ? {} : { maxMessages }) } },
+        controller.signal,
+      )) {
+        const snapshot = frame as DshFollowSnapshot
+        if (snapshot.type !== 'snapshot') break
+        const cursor = snapshot.cursor
+        if (beforeSeq === undefined || typeof cursor !== 'number') {
+          return {
+            events: snapshot.records ?? [],
+            ...(snapshot.hasMore === undefined ? {} : { hasMore: snapshot.hasMore }),
+            ...(snapshot.projections === undefined ? {} : { projections: snapshot.projections }),
+            items: toMobileHistoryItems(snapshot.records ?? []),
+          }
+        }
+        const page = await this.#dsh.call<DshPage>('session/page', {
+          request: { address, throughSeq: cursor, beforeSeq, ...(maxMessages === undefined ? {} : { maxMessages }) },
+        })
+        return {
+          events: page.records ?? [],
+          ...(page.hasMore === undefined ? {} : { hasMore: page.hasMore }),
+          ...(snapshot.projections === undefined ? {} : { projections: snapshot.projections }),
+          items: toMobileHistoryItems(page.records ?? []),
+        }
       }
-    } catch (error) {
-      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH mux subscription ended:', error)
     } finally {
-      if (this.#muxAbort === controller) {
-        this.#muxAbort = undefined
-        this.#scheduleStreamRestart('mux', controller.signal.aborted)
+      controller.abort()
+    }
+    throw new DshLoopbackError('upstream-unavailable', 'DSH 会话流在返回快照前已关闭。')
+  }
+
+  /**
+   * Reads the durable model-selection projection for one session, falling back
+   * to a one-shot follow snapshot when the control cache has no entry.
+   * @param sessionId - Session whose selection is read.
+   * @returns The current selection, or `undefined` when the log has none.
+   */
+  #projectedModelSelection(sessionId: string): DshModelSelection | undefined {
+    const values = this.#projections.get(sessionId)
+    const selection = values?.modelSelection
+    if (selection !== null && typeof selection === 'object' && !Array.isArray(selection)) {
+      const view = selection as { lastUsed?: DshModelSelection | null; next?: DshModelSelection | null }
+      return view.next ?? view.lastUsed ?? undefined
+    }
+    return undefined
+  }
+
+  #startUpstream(): void {
+    if (this.#status === undefined) return
+    if (this.#eventsAbort === undefined) {
+      const controller = new AbortController()
+      this.#eventsAbort = controller
+      void this.#captureEvents(controller)
+    }
+    if (this.#controlAbort === undefined) {
+      const controller = new AbortController()
+      this.#controlAbort = controller
+      void this.#captureControl(controller)
+    }
+    if (this.#workspaceAbort === undefined) {
+      const controller = new AbortController()
+      this.#workspaceAbort = controller
+      void this.#captureWorkspaces(controller)
+    }
+  }
+
+  /** Re-arms any upstream stream that is not currently capturing. */
+  #ensureUpstream(): void {
+    this.#startUpstream()
+  }
+
+  #stopUpstream(): void {
+    this.#eventsAbort?.abort()
+    this.#eventsAbort = undefined
+    if (this.#eventsRetry !== undefined) clearTimeout(this.#eventsRetry)
+    this.#eventsRetry = undefined
+    this.#controlAbort?.abort()
+    this.#controlAbort = undefined
+    if (this.#controlRetry !== undefined) clearTimeout(this.#controlRetry)
+    this.#controlRetry = undefined
+    this.#workspaceAbort?.abort()
+    this.#workspaceAbort = undefined
+    if (this.#workspaceRetry !== undefined) clearTimeout(this.#workspaceRetry)
+    this.#workspaceRetry = undefined
+    for (const follow of this.#follows.values()) follow.controller.abort()
+    this.#follows.clear()
+    this.#clientId = undefined
+  }
+
+  async #captureEvents(controller: AbortController): Promise<void> {
+    try {
+      for await (const frame of this.#dsh.openEvents(controller.signal)) this.#handleEventFrame(frame)
+    } catch (error) {
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH event subscription ended:', error)
+    } finally {
+      if (this.#eventsAbort === controller) {
+        this.#eventsAbort = undefined
+        this.#clientId = undefined
+        this.#scheduleUpstreamRestart('events', controller.signal.aborted)
       }
     }
   }
 
-  async #captureHost(controller: AbortController): Promise<void> {
+  async #captureControl(controller: AbortController): Promise<void> {
     try {
-      for await (const envelope of this.#dsh.host(controller.signal)) this.#broadcast('host', envelope)
+      for await (const frame of this.#dsh.open('session/control', {}, controller.signal)) {
+        this.#handleControlFrame(frame as DshControlFrame)
+      }
     } catch (error) {
-      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH host subscription ended:', error)
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH control subscription ended:', error)
     } finally {
-      if (this.#hostAbort === controller) {
-        this.#hostAbort = undefined
-        this.#scheduleStreamRestart('host', controller.signal.aborted)
+      if (this.#controlAbort === controller) {
+        this.#controlAbort = undefined
+        this.#scheduleUpstreamRestart('control', controller.signal.aborted)
       }
     }
   }
 
-  #scheduleStreamRestart(stream: 'host' | 'mux', aborted: boolean): void {
+  async #captureWorkspaces(controller: AbortController): Promise<void> {
+    try {
+      for await (const frame of this.#dsh.open('workspace/follow', {}, controller.signal)) {
+        this.#handleWorkspaceFrame(frame as DshWorkspaceFrame)
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH workspace subscription ended:', error)
+    } finally {
+      if (this.#workspaceAbort === controller) {
+        this.#workspaceAbort = undefined
+        this.#scheduleUpstreamRestart('workspace', controller.signal.aborted)
+      }
+    }
+  }
+
+  #scheduleUpstreamRestart(stream: UpstreamStream, aborted: boolean): void {
     if (aborted || this.#status === undefined) return
-    if (stream === 'mux') {
-      if (this.#muxRetry !== undefined) return
-      const retry = setTimeout(() => {
-        this.#muxRetry = undefined
-        this.#startMux()
-      }, 1_000)
-      retry.unref()
-      this.#muxRetry = retry
-      return
-    }
-    if (this.#hostRetry !== undefined || this.#eventClients.size === 0) return
+    const existing = stream === 'events' ? this.#eventsRetry : stream === 'control' ? this.#controlRetry : this.#workspaceRetry
+    if (existing !== undefined) return
     const retry = setTimeout(() => {
-      this.#hostRetry = undefined
-      this.#startHost()
+      if (stream === 'events') this.#eventsRetry = undefined
+      else if (stream === 'control') this.#controlRetry = undefined
+      else this.#workspaceRetry = undefined
+      this.#startUpstream()
     }, 1_000)
     retry.unref()
-    this.#hostRetry = retry
+    if (stream === 'events') this.#eventsRetry = retry
+    else if (stream === 'control') this.#controlRetry = retry
+    else this.#workspaceRetry = retry
+  }
+
+  #handleEventFrame(value: Record<string, unknown>): void {
+    const frame = value as DshEventFrame
+    if (frame.type === 'ready') {
+      this.#clientId = typeof frame.clientId === 'string' ? frame.clientId : undefined
+      return
+    }
+    if (frame.type === 'emit') this.#handleForwardedEmit(frame.event, frame.args ?? [])
+    else if (frame.type === 'waterfall') this.#rememberWaterfall(frame)
+    else this.#resolveWaterfallCancellation(frame.eventId)
+  }
+
+  /** Projects one forwarded Host emit onto the mobile SSE contract. */
+  #handleForwardedEmit(event: string | undefined, args: unknown[]): void {
+    if (event === 'api-session/added') {
+      const summary = args[0]
+      if (summary === null || typeof summary !== 'object' || Array.isArray(summary)) return
+      const record = summary as DshSessionSummary
+      const sessionId = typeof record.sessionId === 'string' ? record.sessionId : undefined
+      if (sessionId === undefined) return
+      if (record.projections?.values !== undefined) this.#projections.set(sessionId, record.projections.values)
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/session-added',
+        payload: { sessionId },
+        sessionId,
+      })
+      return
+    }
+    if (event === 'api-session/removed') {
+      const sessionId = typeof args[0] === 'string' ? args[0] : undefined
+      if (sessionId === undefined) return
+      this.#projections.delete(sessionId)
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/session-removed',
+        payload: { sessionId },
+        sessionId,
+      })
+      return
+    }
+    if (event === 'api-session/status') {
+      const sessionId = typeof args[0] === 'string' ? args[0] : undefined
+      const running = args[1] === true
+      if (sessionId === undefined) return
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/session-status',
+        payload: { running },
+        sessionId,
+      })
+      return
+    }
+    // Remaining forwarded emits (cordis/*, settings, commands, credentials,
+    // llm, preset selection) have no mobile consumer; the bridge's default
+    // invalidation covers them through the events above.
+  }
+
+  /** Registers one Host waterfall delivery as a pending mobile interaction. */
+  #rememberWaterfall(frame: DshEventFrame): void {
+    if (frame.type !== 'waterfall') return
+    const eventId = frame.eventId
+    const sessionId = frame.agentId
+    if (typeof eventId !== 'string' || typeof sessionId !== 'string') return
+    const request = frame.request ?? {}
+    let pending: PendingInteraction
+    if (frame.event === 'approval/request') {
+      const toolName = typeof request.toolName === 'string' ? request.toolName : ''
+      pending = {
+        rpcId: eventId,
+        type: 'approval/requested',
+        sessionId,
+        payload: {
+          type: 'approval/requested',
+          sessionId,
+          approvalId: eventId,
+          toolName,
+          ...(typeof request.callId === 'string' ? { callId: request.callId } : {}),
+          ...(typeof request.reason === 'string' ? { reason: request.reason } : {}),
+        },
+        receivedAt: new Date().toISOString(),
+      }
+    } else if (frame.event === 'user-questions/request') {
+      pending = {
+        rpcId: eventId,
+        type: 'question/requested',
+        sessionId,
+        payload: { type: 'question/requested', sessionId, questions: request.questions },
+        receivedAt: new Date().toISOString(),
+      }
+    } else {
+      // Other waterfall events have no mobile claimant; delegating releases
+      // the Host chain exactly like a web client without a listener.
+      void this.#dsh
+        .answerEvent({ clientId: this.#clientId, eventId, outcome: { kind: 'next' } })
+        .catch(() => {})
+      return
+    }
+    this.#pending.set(eventId, pending)
+    this.#broadcast({
+      contractVersion: 1,
+      eventId: this.#nextStreamEventId(),
+      type: pending.type,
+      payload: pending.payload,
+      rpcId: eventId,
+      sessionId,
+    })
+  }
+
+  /** Drops the pending interaction for one Host cancellation and notifies devices. */
+  #resolveWaterfallCancellation(eventId: string | undefined): void {
+    if (typeof eventId !== 'string') return
+    const interaction = this.#pending.get(eventId)
+    if (interaction === undefined) return
+    this.#pending.delete(eventId)
+    this.#broadcast(interaction.type === 'approval/requested'
+      ? {
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'approval/resolved',
+        payload: { approvalId: eventId },
+        rpcId: eventId,
+        sessionId: interaction.sessionId,
+      }
+      : {
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'question/resolved',
+        payload: { questionRpcId: eventId },
+        rpcId: eventId,
+        sessionId: interaction.sessionId,
+      })
+  }
+
+  /**
+   * Translates one validated mobile interaction response into a Host Remote
+   * event result and answers the pending waterfall delivery.
+   * @param interaction - The pending interaction being answered.
+   * @param result - The mobile `respond` result envelope.
+   * @returns The Host's acceptance receipt.
+   */
+  async #answerInteraction(interaction: PendingInteraction, result: unknown): Promise<unknown> {
+    const response = result as { ok?: boolean; value?: Record<string, unknown>; error?: Record<string, unknown> }
+    const clientId = this.#clientId
+    if (typeof clientId !== 'string') throw new DshLoopbackError('upstream-unavailable', 'DSH 事件流尚未就绪，请稍后重试。')
+    const outcome = response.ok === true
+      ? { kind: 'result' as const, value: interaction.type === 'approval/requested'
+        ? (typeof response.value?.outcome === 'string' ? response.value.outcome : undefined)
+        : response.value?.answer }
+      : {
+        kind: 'rejected' as const,
+        error: {
+          name: typeof response.error?.name === 'string' ? response.error.name : 'Error',
+          message: typeof response.error?.message === 'string' ? response.error.message : 'the client rejected the request',
+          ...(typeof response.error?.code === 'string' ? { code: response.error.code } : {}),
+          ...(response.error?.details === undefined ? {} : { details: response.error.details }),
+        },
+      }
+    return this.#dsh.answerEvent({ clientId, eventId: interaction.rpcId, outcome })
+  }
+
+  #handleControlFrame(frame: DshControlFrame): void {
+    if (frame.type === 'baseline') {
+      const queues = frame.value?.queues ?? {}
+      const jobs = frame.value?.jobs ?? {}
+      this.#queues.clear()
+      for (const [sessionId, items] of Object.entries(queues)) this.#queues.set(sessionId, items)
+      this.#jobs.clear()
+      for (const [sessionId, sessionJobs] of Object.entries(jobs)) this.#jobs.set(sessionId, sessionJobs)
+      return
+    }
+    if (frame.type === 'queue') {
+      const sessionId = frame.sessionId
+      if (sessionId === undefined) return
+      this.#queues.set(sessionId, frame.items ?? [])
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'session/queue',
+        payload: { items: frame.items ?? [] },
+        sessionId,
+        snapshot: true,
+      })
+      return
+    }
+    if (frame.type === 'jobs') {
+      const sessionId = frame.sessionId
+      if (sessionId === undefined) return
+      this.#jobs.set(sessionId, frame.jobs ?? [])
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'session/jobs',
+        payload: { jobs: frame.jobs ?? [] },
+        sessionId,
+        snapshot: true,
+      })
+      return
+    }
+    if (typeof frame.sessionId === 'string' && typeof frame.key === 'string') {
+      const values = this.#projections.get(frame.sessionId) ?? {}
+      this.#projections.set(frame.sessionId, { ...values, [frame.key]: frame.value })
+    }
+  }
+
+  #handleWorkspaceFrame(frame: DshWorkspaceFrame): void {
+    if (frame.type === 'baseline') {
+      this.#workspaces = { items: frame.items ?? [], archivedSessionIds: frame.archivedSessionIds ?? [] }
+      return
+    }
+    if (frame.type === 'upsert') {
+      const workspace = frame.workspace
+      const workspaceId = workspace?.workspaceId
+      if (workspace === undefined || workspaceId === undefined) return
+      const others = (this.#workspaces.items ?? []).filter(item => item.workspaceId !== workspaceId)
+      this.#workspaces = { ...this.#workspaces, items: [...others, workspace] }
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/workspace-changed',
+        payload: { workspaceId },
+      })
+      return
+    }
+    if (frame.type === 'remove') {
+      const workspaceId = frame.workspaceId
+      if (workspaceId === undefined) return
+      this.#workspaces = {
+        ...this.#workspaces,
+        items: (this.#workspaces.items ?? []).filter(item => item.workspaceId !== workspaceId),
+      }
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/workspace-removed',
+        payload: { workspaceId },
+      })
+      return
+    }
+    if (frame.type === 'order') {
+      this.#broadcast({
+        contractVersion: 1,
+        eventId: this.#nextStreamEventId(),
+        type: 'host/workspace-order-changed',
+        payload: {},
+      })
+      return
+    }
+    this.#workspaces = { ...this.#workspaces, archivedSessionIds: frame.archivedSessionIds ?? [] }
+    this.#broadcast({
+      contractVersion: 1,
+      eventId: this.#nextStreamEventId(),
+      type: 'host/archived-sessions-changed',
+      payload: {},
+    })
   }
 
   #createSessionSubscription(
@@ -758,8 +1293,10 @@ export class MobileGateway {
     if (client === undefined)
       throw new GatewayHttpError('bad-request', '建立会话订阅前必须先连接移动实时事件流。')
     const previous = client.subscriptions.get(sessionId)
-    if (previous !== undefined) this.#subscriptions.delete(previous.subscriptionId)
-    const subscription: SessionSubscription = {
+    if (previous !== undefined) {
+      this.#subscriptions.delete(previous.subscriptionId)
+      this.#releaseFollowIfUnused(sessionId)
+    }    const subscription: SessionSubscription = {
       subscriptionId: randomBytes(18).toString('base64url'),
       activationToken: randomBytes(32).toString('base64url'),
       deviceId,
@@ -772,6 +1309,7 @@ export class MobileGateway {
     }
     client.subscriptions.set(sessionId, subscription)
     this.#subscriptions.set(subscription.subscriptionId, subscription)
+    this.#ensureFollow(sessionId)
     const status = [...this.#pending.values()].some(item => item.sessionId === sessionId) ? 'waiting' : 'idle'
     return {
       subscriptionId: subscription.subscriptionId,
@@ -785,6 +1323,55 @@ export class MobileGateway {
         queue: { items: this.#queues.get(sessionId) ?? [] },
         jobs: { items: this.#jobs.get(sessionId) ?? [] },
       },
+    }
+  }
+
+  /** Opens the per-session DSH follow stream that feeds subscribed devices. */
+  #ensureFollow(sessionId: string): void {
+    if (this.#follows.has(sessionId)) return
+    const controller = new AbortController()
+    this.#follows.set(sessionId, { controller })
+    void this.#captureFollow(sessionId, controller)
+  }
+
+  async #captureFollow(sessionId: string, controller: AbortController): Promise<void> {
+    try {
+      for await (const frame of this.#dsh.open(
+        'session/follow',
+        { request: { address: { kind: 'session', sessionId } } },
+        controller.signal,
+      )) {
+        if (frame.type === 'snapshot') {
+          const projections = (frame as DshFollowSnapshot).projections
+          if (projections?.values !== undefined) this.#projections.set(sessionId, projections.values)
+          continue
+        }
+        if (frame.type !== 'event' || frame.event === null || typeof frame.event !== 'object') continue
+        const event = frame.event as Record<string, unknown>
+        const seq = typeof event.seq === 'number' && Number.isInteger(event.seq) ? event.seq : undefined
+        this.#broadcast({
+          contractVersion: 1,
+          eventId: this.#nextStreamEventId(),
+          type: 'session/event',
+          payload: { event },
+          sessionId,
+          ...(seq === undefined ? {} : { seq }),
+        })
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) console.error('[mobile-gateway] DSH session follow ended:', error)
+    } finally {
+      const follow = this.#follows.get(sessionId)
+      if (follow !== undefined && follow.controller === controller) {
+        this.#follows.delete(sessionId)
+        const stillSubscribed = [...this.#subscriptions.values()].some(item => item.sessionId === sessionId)
+        if (stillSubscribed && !controller.signal.aborted && this.#status !== undefined) {
+          const retry = setTimeout(() => {
+            this.#ensureFollow(sessionId)
+          }, 1_000)
+          retry.unref()
+        }
+      }
     }
   }
 
@@ -840,17 +1427,29 @@ export class MobileGateway {
       for (const subscription of client.subscriptions.values())
         if (this.#subscriptions.get(subscription.subscriptionId) === subscription)
           this.#subscriptions.delete(subscription.subscriptionId)
+      for (const sessionId of new Set([...client.subscriptions.keys()])) this.#releaseFollowIfUnused(sessionId)
       if (this.#eventClients.size === 0) this.#stopEventHeartbeat()
     })
   }
 
-  #broadcast(
-    source: 'host' | 'mux',
-    envelope: { rpcId: string; payload: Record<string, unknown> },
-  ): void {
-    const event = toMobileStreamEvent(source, envelope, this.#nextStreamEventId())
+  /** Aborts one session follow stream when no subscription still needs it. */
+  #releaseFollowIfUnused(sessionId: string): void {
+    const stillSubscribed = [...this.#subscriptions.values()].some(item => item.sessionId === sessionId)
+    if (stillSubscribed) return
+    const follow = this.#follows.get(sessionId)
+    if (follow === undefined) return
+    this.#follows.delete(sessionId)
+    follow.controller.abort()
+  }
+
+  #broadcast(event: MobileStreamEvent): void {
+    // Host-wide events (host/*) reach every connected device exactly like the
+    // old desktop host channel; session-scoped events (approval and question
+    // waterfalls, session/event, session/queue, session/jobs) only reach
+    // devices subscribed to that session.
+    const global = event.type.startsWith('host/')
     for (const client of this.#eventClients.values()) {
-      if (source === 'host' || event.sessionId === undefined) {
+      if (global || event.sessionId === undefined) {
         this.#writeStreamEvent(client.response, event)
         continue
       }
@@ -887,7 +1486,7 @@ export class MobileGateway {
   #startEventHeartbeat(): void {
     if (this.#eventHeartbeat !== undefined) return
     const heartbeat = setInterval(() => {
-      for (const client of this.#eventClients.values()) client.response.write(': heartbeat\\n\\n')
+      for (const client of this.#eventClients.values()) client.response.write(': heartbeat\n\n')
     }, 2_500)
     heartbeat.unref()
     this.#eventHeartbeat = heartbeat
@@ -907,42 +1506,6 @@ export class MobileGateway {
     const now = Date.now()
     for (const [pairingId, pairing] of this.#pairings) {
       if (pairing.expiresAt <= now) this.#pairings.delete(pairingId)
-    }
-  }
-
-  #rememberInteraction(envelope: { rpcId: string; payload: Record<string, unknown> }): void {
-    const { payload } = envelope
-    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
-    if (payload.type === 'session/subscribed' && sessionId !== undefined) {
-      // The host omits a queue baseline for an empty queue, so the subscribed
-      // generation boundary must clear any stale cached snapshot first.
-      this.#queues.delete(sessionId)
-      this.#jobs.delete(sessionId)
-    } else if (payload.type === 'session/queue' && sessionId !== undefined && Array.isArray(payload.items)) {
-      this.#queues.set(sessionId, payload.items)
-    } else if (payload.type === 'session/jobs' && sessionId !== undefined && Array.isArray(payload.jobs)) {
-      this.#jobs.set(sessionId, payload.jobs)
-    } else if (payload.type === 'approval/requested' && sessionId !== undefined && typeof payload.approvalId === 'string') {
-      this.#pending.set(envelope.rpcId, {
-        rpcId: envelope.rpcId,
-        type: 'approval/requested',
-        sessionId,
-        payload,
-        receivedAt: new Date().toISOString(),
-      })
-    } else if (payload.type === 'question/requested' && sessionId !== undefined && Array.isArray(payload.questions)) {
-      this.#pending.set(envelope.rpcId, {
-        rpcId: envelope.rpcId,
-        type: 'question/requested',
-        sessionId,
-        payload,
-        receivedAt: new Date().toISOString(),
-      })
-    } else if (payload.type === 'approval/resolved' && typeof payload.approvalId === 'string') {
-      for (const [rpcId, item] of this.#pending)
-        if (item.payload.approvalId === payload.approvalId) this.#pending.delete(rpcId)
-    } else if (payload.type === 'question/resolved' && typeof payload.questionRpcId === 'string') {
-      this.#pending.delete(payload.questionRpcId)
     }
   }
 
@@ -982,33 +1545,6 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 function pairingSecretHash(value: string): Uint8Array {
   return createHash('sha256').update(value).digest()
-}
-
-function toMobileStreamEvent(
-  source: 'host' | 'mux',
-  envelope: { rpcId: string; payload: Record<string, unknown> },
-  eventId: string,
-): MobileStreamEvent {
-  const { payload } = envelope
-  const type = typeof payload.type === 'string' ? payload.type : `${source}/unknown`
-  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : undefined
-  const event = payload.event
-  const eventSeq =
-    event !== null && typeof event === 'object' && !Array.isArray(event)
-      ? (event as Record<string, unknown>).seq
-      : undefined
-  const durableSeq = typeof eventSeq === 'number' ? eventSeq : typeof payload.seq === 'number' ? payload.seq : undefined
-  const snapshot = type === 'session/subscribed' || type === 'session/queue' || type === 'session/jobs'
-  return {
-    contractVersion: 1,
-    eventId,
-    type,
-    payload,
-    ...(source === 'mux' ? { rpcId: envelope.rpcId } : {}),
-    ...(sessionId === undefined ? {} : { sessionId }),
-    ...(durableSeq === undefined ? {} : { seq: durableSeq }),
-    ...(snapshot ? { snapshot: true } : {}),
-  }
 }
 
 function writeJson(response: ServerResponse, status: number, body: unknown): void {
@@ -1110,12 +1646,12 @@ function optionalRevision(value: unknown): number | undefined {
     throw new GatewayHttpError('bad-request', '设置版本号必须是非负整数。')
   return value
 }
-function toMobileHistoryItems(history: DshHistory): MobileHistoryItem[] {
-  return (history.events ?? []).flatMap((entry) => {
+function toMobileHistoryItems(records: readonly DshHistoryRecord[]): MobileHistoryItem[] {
+  return records.flatMap((entry) => {
     const event = entry.event
     if (event === undefined) return []
     const seq = typeof event.seq === 'number' && Number.isInteger(event.seq) ? event.seq : undefined
-    return [{ ...(seq === undefined ? {} : { seq }), ...(entry.view === undefined ? {} : { view: entry.view }), event }]
+    return [{ ...(seq === undefined ? {} : { seq }), event }]
   })
 }
 
@@ -1263,11 +1799,12 @@ function upstreamRejectedError(code: string | undefined): MobileGatewayError {
 function upstreamMessage(code: DshLoopbackError['code']): string {
   return code === 'upstream-rejected' ? '桌面端拒绝了此次请求。' : '桌面端 DeepSeek Harness 当前不可用。'
 }
+
 /** Selects the workspace fields required by the mobile drawer's project and session tree. */
 function mobileWorkspaces(
-  items: readonly DshWorkspace[],
+  items: readonly DshWorkspace[] | undefined,
 ): Array<{ workspaceId: string; title: string; path?: string; sessionIds: string[] }> {
-  return items.map(workspace => ({
+  return (items ?? []).map(workspace => ({
     workspaceId: workspace.workspaceId,
     title: workspace.title ?? '',
     ...(workspace.path === undefined ? {} : { path: workspace.path }),
@@ -1275,92 +1812,17 @@ function mobileWorkspaces(
   }))
 }
 
-function isFallbackSessionTitle(title: unknown): boolean {
-  if (typeof title !== 'string') return true
-  const normalized = title.trim().toLowerCase()
-  return (
-    normalized === '' || normalized === '新会话' || normalized === 'new session' || normalized === 'untitled session'
-  )
-}
-async function withVisibleSessionMetadata(client: DshLoopbackClient, item: DshSessionSummary): Promise<DshSessionSummary> {
-  try {
-    const history = await client.call<DshHistory>('session.history', { sessionId: item.sessionId })
-    const values = sessionProjectionValues(history)
-    const projectedTitle = typeof values?.title === 'string' && values.title.trim() !== '' ? values.title : undefined
-    const metadata = values?.sessionListMetadata
-    const blank = metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)
-      ? (metadata as Record<string, unknown>).blank
-      : undefined
-    const fallbackTitle = isFallbackSessionTitle(item.title) ? firstVisibleUserText(history) : undefined
-    const title = projectedTitle ?? fallbackTitle
-    return {
-      ...item,
-      ...(title === undefined ? {} : { title }),
-      ...(typeof blank === 'boolean' ? { blank } : {}),
-    }
-  } catch {
-    return item
+/** Applies projection hints (durable title, blank state) onto one list row. */
+function withVisibleSessionMetadata(item: DshSessionSummary, cached: Record<string, unknown> | undefined): DshSessionSummary {
+  const values = item.projections?.values ?? cached ?? {}
+  const projectedTitle = typeof values.title === 'string' && values.title.trim() !== '' ? values.title : undefined
+  const metadata = values.sessionListMetadata
+  const blank = metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>).blank
+    : item.blank
+  return {
+    ...item,
+    ...(projectedTitle === undefined ? {} : { title: projectedTitle }),
+    ...(typeof blank === 'boolean' ? { blank } : {}),
   }
-}
-
-/** Returns the desktop-owned session projections when the history response carries a valid value map. */
-function sessionProjectionValues(history: DshHistory): Record<string, unknown> | undefined {
-  const projections = history.projections
-  if (projections === null || typeof projections !== 'object' || Array.isArray(projections)) return undefined
-  const values = (projections as Record<string, unknown>).values
-  return values !== null && typeof values === 'object' && !Array.isArray(values)
-    ? values as Record<string, unknown>
-    : undefined
-}
-function firstVisibleUserText(history: DshHistory): string | undefined {
-  for (const entry of history.events ?? []) {
-    const event = entry.event
-    if (event === undefined || !isUserMessageEvent(event)) continue
-    const text = eventDisplayText(event)
-    if (text !== undefined && !isInternalMobileText(text)) return text.slice(0, 80)
-  }
-  return undefined
-}
-function isUserMessageEvent(event: Record<string, unknown>): boolean {
-  const payload =
-    event.data !== null && typeof event.data === 'object' && !Array.isArray(event.data)
-      ? (event.data as Record<string, unknown>)
-      : event
-  const role = [payload.role, payload.kind, payload.author].find(value => typeof value === 'string')
-  if (typeof role === 'string' && ['user', 'human'].includes(role.toLowerCase())) return true
-  const type = typeof event.type === 'string' ? event.type.toLowerCase() : ''
-  return type === 'user/message' || type.startsWith('user/')
-}
-function eventDisplayText(event: Record<string, unknown>): string | undefined {
-  const payload =
-    event.data !== null && typeof event.data === 'object' && !Array.isArray(event.data)
-      ? (event.data as Record<string, unknown>)
-      : event
-  const direct = textFromContent(payload.content) ?? textFromContent(payload.text)
-  if (direct !== undefined) return direct
-  const message = payload.message
-  if (message !== null && typeof message === 'object' && !Array.isArray(message)) {
-    return textFromContent((message as Record<string, unknown>).content)
-  }
-  return undefined
-}
-function textFromContent(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.trim()) return value.trim()
-  if (!Array.isArray(value)) return undefined
-  const parts = value.flatMap((item) => {
-    if (item === null || typeof item !== 'object' || Array.isArray(item)) return []
-    const text = (item as Record<string, unknown>).text
-    return typeof text === 'string' && text.trim() ? [text.trim()] : []
-  })
-  return parts.length ? parts.join('\n') : undefined
-}
-function isInternalMobileText(text: string): boolean {
-  const lower = text.toLowerCase()
-  return [
-    '<system-reminder',
-    'agents.md',
-    'instructions from:',
-    'pre-release stance',
-    'reply exactly mobilegatewayok',
-  ].some(marker => lower.includes(marker))
 }

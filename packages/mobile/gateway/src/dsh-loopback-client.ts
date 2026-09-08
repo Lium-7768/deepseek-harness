@@ -17,7 +17,21 @@ interface RpcResponse<T> {
   result: RpcSuccess<T> | RpcFailure
 }
 
-/** Calls the existing DSH API only through its loopback listener. */
+/**
+ * The gateway WebSocket multiplexer path and Remote stream envelope contract
+ * served by the DSH api gateway (`@deepseek-ai/dsh-api-gateway`
+ * stream-protocol). Fixed wire facts of the runtime, not configuration.
+ */
+const REMOTE_STREAM_MUX_PATH = '/api/remote.mux'
+const REMOTE_EVENT_ENDPOINT = '$events'
+const REMOTE_EVENT_RESULT_ENDPOINT = '$events/result'
+
+type StreamServerMessage =
+  | { readonly type: 'item'; readonly streamId: string; readonly value?: unknown }
+  | { readonly type: 'error'; readonly streamId: string; readonly error: { code?: string; message: string } }
+  | { readonly type: 'end'; readonly streamId: string }
+
+/** Calls the current DSH web runtime only through its loopback listener. */
 export class DshLoopbackClient {
   readonly #baseUrl: URL
 
@@ -31,21 +45,21 @@ export class DshLoopbackClient {
   }
 
   /**
-   * Invokes one allowlisted DSH RPC and returns its business value.
-   * @param method - Allowlisted DSH RPC method name.
-   * @param payload - JSON-serializable request payload forwarded to DSH.
+   * Invokes one allowlisted DSH Remote endpoint and returns its business value.
+   * @param endpoint - `namespace/method` endpoint forwarded by the api gateway.
+   * @param args - Wire args keyed by the endpoint's parameter names.
    * @returns The accepted DSH business value.
    * @throws {DshLoopbackError} When DSH is unavailable, returns malformed data, or rejects the RPC.
    */
-  async call<T>(method: string, payload: unknown): Promise<T> {
+  async call<T>(endpoint: string, args: Record<string, unknown>): Promise<T> {
     const rpcId = randomUUID()
-    const response = await fetch(new URL(`/api/${method}`, this.#baseUrl), {
+    const response = await fetch(new URL('/api', this.#baseUrl), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         host: this.#baseUrl.host,
       },
-      body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
+      body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload: { args } }),
     })
     if (!response.ok) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
     const message = (await response.json()) as RpcResponse<T>
@@ -64,111 +78,124 @@ export class DshLoopbackClient {
   }
 
   /**
-   * Sends a correlated response to a pending DSH interaction.
-   * @param message - Pending RPC identifier and validated interaction result.
-   * @returns DSH's acceptance receipt.
-   * @throws {DshLoopbackError} When DSH is unavailable or rejects the response.
+   * Answers one pending Host Remote event delivery through the gateway's
+   * forwarded-event result endpoint.
+   * @param result - Client event result carrying the opening `clientId`.
+   * @returns The gateway's acceptance value.
+   * @throws {DshLoopbackError} When DSH is unavailable or rejects the result.
    */
-  async respond(message: { rpcId: string; result: unknown }): Promise<unknown> {
-    const response = await fetch(new URL('/api/respond', this.#baseUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', host: this.#baseUrl.host },
-      body: JSON.stringify({ type: 'client-response', ...message }),
-    })
-    if (!response.ok) throw new DshLoopbackError('upstream-unavailable', `DSH returned HTTP ${response.status}.`)
-    const receipt = (await response.json()) as { accepted?: boolean; reason?: string }
-    if (receipt.accepted !== true)
-      throw new DshLoopbackError('upstream-rejected', receipt.reason ?? 'DSH rejected the interaction response.')
-    return receipt
+  async answerEvent<T = unknown>(result: Record<string, unknown>): Promise<T> {
+    return this.call<T>(REMOTE_EVENT_RESULT_ENDPOINT, result)
   }
 
   /**
-   * Streams validated DSH mux server requests over the desktop WebSocket downlink.
-   * @param signal - Abort signal that closes the WebSocket and ends the stream.
-   * @returns Mux RPC envelopes until DSH closes the downlink or the signal aborts.
+   * Opens the gateway-internal forwarded Host event stream.
+   * @param signal - Abort signal that cancels the stream.
+   * @returns Remote event frames: `ready`, then `emit`, `waterfall`, and `cancel`.
    */
-  mux(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
-    return this.#stream('/api/events.mux', signal)
+  openEvents(signal: AbortSignal): AsyncGenerator<Record<string, unknown>> {
+    return this.open(REMOTE_EVENT_ENDPOINT, {}, signal)
   }
 
   /**
-   * Streams validated DSH host server requests over the desktop WebSocket downlink.
-   * @param signal - Abort signal that closes the WebSocket and ends the stream.
-   * @returns Host RPC envelopes until DSH closes the downlink or the signal aborts.
+   * Opens one logical Remote stream on the runtime WebSocket multiplexer.
+   * @param endpoint - Stream endpoint such as `session/control` or `workspace/follow`.
+   * @param args - Wire args keyed by the endpoint's parameter names.
+   * @param signal - Abort signal that cancels the logical stream.
+   * @returns Stream item values until the Host ends or fails the stream.
    */
-  host(signal: AbortSignal): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
-    return this.#stream('/api/events.host', signal)
-  }
-
-  async *#stream(
-    path: '/api/events.host' | '/api/events.mux',
+  async *open(
+    endpoint: string,
+    args: Record<string, unknown>,
     signal: AbortSignal,
-  ): AsyncGenerator<{ rpcId: string; payload: Record<string, unknown> }> {
+  ): AsyncGenerator<Record<string, unknown>> {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-    const url = new URL(path, this.#baseUrl)
+    const url = new URL(REMOTE_STREAM_MUX_PATH, this.#baseUrl)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(url)
+    const socket = new WebSocket(url, { headers: { host: this.#baseUrl.host } })
     const inbox: StreamItem[] = []
     let wake: (() => void) | undefined
+    let settled = false
     const enqueue = (item: StreamItem): void => {
       inbox.push(item)
       wake?.()
       wake = undefined
     }
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.once('open', resolve)
+      socket.once('error', reject)
+    })
+    const streamId = randomUUID()
     const handleMessage = (data: WebSocket.RawData): void => {
       const text = Array.isArray(data)
         ? Buffer.concat(data).toString()
         : data instanceof ArrayBuffer
           ? new TextDecoder().decode(data)
           : data.toString()
-      const envelope = parseMuxEnvelope(text)
-      if (envelope !== undefined) enqueue({ kind: 'frame', envelope })
+      const message = parseStreamServerMessage(text, streamId)
+      if (message === undefined) return
+      if (message.type === 'item') enqueue({ kind: 'item', value: message.value })
+      else if (message.type === 'error') enqueue({ kind: 'error', error: message.error })
+      else enqueue({ kind: 'end' })
     }
     const handleClose = (): void => {
-      enqueue({ kind: 'end' })
+      if (!settled) enqueue({ kind: 'closed' })
     }
-    const handleError = (): void => undefined
     const handleAbort = (): void => {
-      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+      if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+        if (!settled) socket.send(JSON.stringify({ type: 'cancel', streamId }))
+        socket.close()
+      }
     }
-    socket.on('message', handleMessage)
-    socket.once('close', handleClose)
-    socket.on('error', handleError)
-    signal.addEventListener('abort', handleAbort, { once: true })
-    // An abort may already have fired between construction and this registration.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
-    if (signal.aborted) handleAbort()
     try {
+      await opened
+      socket.on('message', handleMessage)
+      socket.once('close', handleClose)
+      signal.addEventListener('abort', handleAbort, { once: true })
+      // An abort may already have fired between construction and this registration.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
+      if (signal.aborted) handleAbort()
+      socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }))
       while (true) {
         while (inbox.length > 0) {
           const item = inbox.shift() as StreamItem
-          if (item.kind === 'end') return
-          yield item.envelope
+          if (item.kind === 'item') yield (item.value ?? {}) as Record<string, unknown>
+          else if (item.kind === 'error') {
+            throw new DshLoopbackError(
+              'upstream-rejected',
+              item.error.message,
+              typeof item.error.code === 'string' ? item.error.code : undefined,
+            )
+          } else return
         }
         await new Promise<void>((resolve) => { wake = resolve })
       }
     } finally {
+      settled = true
       signal.removeEventListener('abort', handleAbort)
       socket.off('message', handleMessage)
       socket.off('close', handleClose)
-      socket.off('error', handleError)
       handleAbort()
     }
   }
 }
 
 type StreamItem =
-  | { kind: 'frame'; envelope: { rpcId: string; payload: Record<string, unknown> } }
+  | { kind: 'item'; value?: unknown }
+  | { kind: 'error'; error: { code?: string; message: string } }
   | { kind: 'end' }
+  | { kind: 'closed' }
 
-function parseMuxEnvelope(data: string): { rpcId: string; payload: Record<string, unknown> } | undefined {
+function parseStreamServerMessage(text: string, streamId: string): StreamServerMessage | undefined {
   try {
-    const value: unknown = JSON.parse(data)
+    const value: unknown = JSON.parse(text)
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
     const record = value as Record<string, unknown>
-    if (record.type !== 'server-request' || typeof record.rpcId !== 'string') return undefined
-    if (record.payload === null || typeof record.payload !== 'object' || Array.isArray(record.payload)) return undefined
-    return { rpcId: record.rpcId, payload: record.payload as Record<string, unknown> }
+    if (record.streamId !== streamId) return undefined
+    if (record.type === 'item' || record.type === 'error' || record.type === 'end') {
+      return record as unknown as StreamServerMessage
+    }
+    return undefined
   } catch {
     return undefined
   }

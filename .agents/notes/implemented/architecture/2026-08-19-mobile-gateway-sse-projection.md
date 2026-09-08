@@ -10,11 +10,11 @@ The native mobile client needs to reflect active desktop and Web conversations w
 
 ## Decision
 
-`@deepseek-ai/dsh-mobile-gateway` remains an external loopback projection over DSH host and mux downlinks. It does not change the DSH Agent Loop, session persistence, Web UI, plugins, or wire protocol. `GET /v1/events` is the only long-lived mobile transport and continues to publish versioned host frames globally. Session mux frames are delivered only through an explicit paired-device subscription.
+`@deepseek-ai/dsh-mobile-gateway` remains an external loopback projection over the DSH Remote wire protocol. It does not change the DSH Agent Loop, session persistence, Web UI, plugins, or wire protocol. `GET /v1/events` is the only long-lived mobile transport and continues to publish versioned host frames globally. Session events are delivered only through an explicit paired-device subscription.
 
-A client establishes a session subscription with `POST /v1/sessions/:sessionId/subscriptions` and its last durable `seq`. The Gateway creates an immediate, connection-owned lease containing the requested watermark, a cutover event id, an activation token, and a bounded event buffer. It does not read DSH history while creating the lease, so a running turn cannot delay activation. The response carries only Gateway-owned queue, job, and pending-interaction snapshots; durable history remains an authoritative DSH HTTP read.
+A client establishes a session subscription with `POST /v1/sessions/:sessionId/subscriptions` and its last durable `seq`. The Gateway creates an immediate, connection-owned lease containing the requested watermark, a cutover event id, an activation token, and a bounded event buffer. It does not read DSH history while creating the lease, so a running turn cannot delay activation. The response carries only Gateway-owned queue, job, and pending-interaction snapshots; durable history is a `session/follow` snapshot read.
 
-The client writes the Gateway snapshots into existing TanStack Query caches, activates the lease with `POST /v1/subscriptions/:subscriptionId/activate`, then invalidates durable history and session events. During the handoff the Gateway buffers mux frames emitted after the cutover id. Activation verifies the token and watermark, replays only durable events whose `seq` is greater than the applied watermark, and changes the lease to live delivery. A full buffer marks the lease for resynchronization instead of silently dropping events.
+The client writes the Gateway snapshots into existing TanStack Query caches, activates the lease with `POST /v1/subscriptions/:subscriptionId/activate`, then invalidates durable history and session events. During the handoff the Gateway buffers session follow frames emitted after the cutover id. Activation verifies the token and watermark, replays only durable events whose `seq` is greater than the applied watermark, and changes the lease to live delivery. A full buffer marks the lease for resynchronization instead of silently dropping events.
 
 `MobileSyncBridge` keeps the existing single authenticated SSE connection and no visual component changes. On `gateway/ready` it reads `POST /v1/sessions/running`, which returns only running session ids and avoids the complete workspace/history projection. It establishes leases for those ids and for later running `host/session-status` frames. Reconnect clears local lease bookkeeping and repeats this recovery path.
 
@@ -22,7 +22,7 @@ The client writes the Gateway snapshots into existing TanStack Query caches, act
 
 The durable source remains DSH session history and its `seq` cursor. A mobile client reads history after activating a lease, then receives only newer durable events. Queue, jobs, and pending interactions are Gateway-owned snapshots and are replaced rather than reconstructed. If lease activation reports an expired buffer or fails, the bridge invalidates the same session query families so the existing HTTP readers converge to desktop authority.
 
-The Gateway reconnects DSH mux and host streams after upstream closure. It maintains the host stream only while a mobile SSE client exists. Gateway shutdown aborts upstream streams, clears lease and retry state, and closes downstream clients.
+The Gateway reconnects its upstream streams after connection closure; the forwarded event, session control, and workspace follow streams run for the gateway lifetime, and per-session follow streams only while a subscription needs them. Gateway shutdown aborts upstream streams, clears lease and retry state, and closes downstream clients.
 
 ## Alternatives considered
 

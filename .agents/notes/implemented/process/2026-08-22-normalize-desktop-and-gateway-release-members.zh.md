@@ -14,7 +14,7 @@ Status: implemented
 
 Gateway 采用普通 DSH 包布局：TypeScript 生成 `lib/types`，tsdown 独立生成 `lib/index.js` 和 `lib/invariant.js` 入口，并由包同时导出和声明它们。其 companion 保留 Gateway 包名，并说明除集成测试已覆盖的传输行为外，不存在可被独立观测的 Cordis 事件或持久化数据关系。
 
-本决策取代了[旧发布序列策略](2026-08-13-public-vendor-and-native-sequences.zh.md)中关于 dsh 家族 access 的断言。发布仍只通过现有的受审查发布路径发生；声明 access 元数据不会发布任何包。
+本决策取代了[旧发布序列策略](../../archived/process/2026-08-13-public-vendor-and-native-sequences.md)中关于 dsh 家族 access 的断言。发布仍只通过现有的受审查发布路径发生；声明 access 元数据不会发布任何包。
 
 ## Alternatives considered
 

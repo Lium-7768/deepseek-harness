@@ -24,14 +24,16 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-运行 `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` 会生成 `lib/index.mjs` 和 `lib/index.d.mts`。嵌入方应用在进程内实例化 `MobileGateway`，并自行拥有围绕它的桌面集成。
+运行 `pnpm --filter @deepseek-ai/dsh-mobile-gateway bundle` 会生成 `lib/index.js` 和 `lib/types/index.d.ts`。嵌入方应用在进程内实例化 `MobileGateway`，并自行拥有围绕它的桌面集成。
 
 <a id="real-time-session-projection"></a>
 ## 实时会话投影
 
+网关通过 api-gateway 线路协议访问桌面运行时：一元 Remote RPC 走 `POST /api`，所有 DSH 流（转发的 Host 事件、会话控制、工作区 follow、按会话 follow）都复用在一条回环 WebSocket `/api/remote.mux` 上。
+
 `POST /v1/sessions/running` 只返回运行中桌面会话的 ID。已配对客户端通过 `POST /v1/sessions/:sessionId/subscriptions` 创建连接拥有的会话租约，再通过 `POST /v1/subscriptions/:subscriptionId/activate` 激活。租约创建会立即返回 durable 序号水位线、切换事件 ID、激活令牌和 Gateway 拥有的 transient 快照；它不会等待会话 history。
 
-激活期间 Gateway 会验证水位线和令牌，重放缓冲中比水位线更新的 durable 事件，并切换为通过现有认证 `GET /v1/events` SSE 连接实时投递。durable history 仍通过 DSH HTTP 读取。有限缓冲溢出时，移动客户端必须重新读取权威 history，而不会接受静默的事件缺口。
+激活期间 Gateway 会验证水位线和令牌，重放缓冲中比水位线更新的 durable 事件，并切换为通过现有认证 `GET /v1/events` SSE 连接实时投递。durable history 从 DSH `session/follow` 流快照读取，更早的窗口可选地用 `session/page` 续读。有限缓冲溢出时，移动客户端必须重新读取权威 history，而不会接受静默的事件缺口。
 
 <a id="model-experience"></a>
 ## 模型体验

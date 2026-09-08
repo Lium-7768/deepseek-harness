@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-mobile-gateway-sse-projection.md
-2026-08-19-mobile-gateway-sse-projection.md: 823d2002cd824761ba13005a5a6353172e2152bb
-2026-08-19-mobile-gateway-sse-projection.zh.md: 802d771a99c44f7f53fc7f8ae9692e49fb95e1ae
+2026-08-19-mobile-gateway-sse-projection.md: 1df7ca4d94b27be2c9a62d56164c4a4d2b636ebe
+2026-08-19-mobile-gateway-sse-projection.zh.md: 6cea05d244773d4f42c478e053b4e1fca374b6fa
