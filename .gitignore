@@ -45,3 +45,4 @@ worktrees/
 .typert-*/
 .tmp-ios-e2e/
 apps/.tmp-ios-e2e/
+native/system/test/bin/
