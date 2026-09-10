@@ -338,6 +338,10 @@ async function main(): Promise<void> {
       { type: 'separator' },
       { role: 'quit' },
     ],
+  }, {
+    // macOS wires clipboard and text-editing shortcuts through application-menu roles;
+    // without this menu Cmd+C/Cmd+V/Cmd+X never reach the renderer.
+    role: 'editMenu',
   }]))
 
   const createMainWindow = (): BrowserWindow => {
