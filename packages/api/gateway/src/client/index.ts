@@ -751,6 +751,17 @@ function requireStrictCodec(codec: TypertCodec, endpoint: string, field: string)
   }
 }
 
+function parseInput(codec: TypertCodec, value: unknown, endpoint: string, field: string): unknown {
+  if (codec.mode !== 'strict') {
+    throw new Error(`client api: generated Remote ${endpoint} field ${JSON.stringify(field)} has no strict codec`)
+  }
+  try {
+    return codec.create().parse(value)
+  } catch (cause) {
+    throw new Error(`client api: ${endpoint} rejected ${JSON.stringify(field)}`, { cause })
+  }
+}
+
 /** The namespace retired before or during the call, so no request outcome exists. */
 function withdrawn(endpoint: string): Extract<RemoteResult<never>, { readonly ok: false }> {
   return internalFailure(`client api: Remote method ${endpoint} is no longer mounted`)
